@@ -1,8 +1,40 @@
 import React, { useState } from 'react';
 import styled from 'styled-components';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
 const Auth = () => {
   const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const navigate = useNavigate();
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await axios.post('http://localhost:3000/api/login', { email, password });
+      localStorage.setItem('token', res.data.token);
+      navigate('/');
+    } catch (err) {
+      alert(err.response?.data?.error || 'Login failed');
+    }
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post('http://localhost:3000/api/register', { name, email, password });
+      alert('Registration successful! Please login.');
+      // Switch back to login form
+      document.getElementById('doodle-flip').checked = false;
+      setEmail('');
+      setPassword('');
+    } catch (err) {
+      alert(err.response?.data?.error || 'Registration failed');
+    }
+  };
 
   return (
     <StyledWrapper>
@@ -30,12 +62,12 @@ const Auth = () => {
               {!isForgotPassword ? (
                 <>
                   <div className="doodle-title">Welcome!</div>
-                  <form className="doodle-form" action={(e) => e.preventDefault()}>
+                  <form className="doodle-form" onSubmit={handleLogin}>
                     <div className="doodle-input-wrapper">
-                      <input className="doodle-input" name="email" placeholder="Email" type="email" required />
+                      <input className="doodle-input" value={email} onChange={(e) => setEmail(e.target.value)} name="email" placeholder="Email" type="email" required />
                     </div>
                     <div className="doodle-input-wrapper">
-                      <input className="doodle-input" name="password" placeholder="Password" type="password" required />
+                      <input className="doodle-input" value={password} onChange={(e) => setPassword(e.target.value)} name="password" placeholder="Password" type="password" required />
                     </div>
                     <button className="doodle-btn" type="submit">Let's Go!</button>
                     <button type="button" className="doodle-link" onClick={() => setIsForgotPassword(true)}>Forgot Password?</button>
@@ -44,7 +76,7 @@ const Auth = () => {
               ) : (
                 <>
                   <div className="doodle-title" style={{ fontSize: '20px' }}>Reset Password</div>
-                  <form className="doodle-form" action={(e) => e.preventDefault()}>
+                  <form className="doodle-form" onSubmit={(e) => e.preventDefault()}>
                     <div className="doodle-input-wrapper">
                       <input className="doodle-input" name="email" placeholder="Email Address" type="email" required />
                     </div>
@@ -56,15 +88,15 @@ const Auth = () => {
             </div>
             <div className="doodle-card-back">
               <div className="doodle-title doodle-title-alt">Join Us!</div>
-              <form className="doodle-form" action={(e) => e.preventDefault()}>
+              <form className="doodle-form" onSubmit={handleRegister}>
                 <div className="doodle-input-wrapper">
-                  <input className="doodle-input" name="username" placeholder="Name" type="text" required />
+                  <input className="doodle-input" value={name} onChange={(e) => setName(e.target.value)} name="username" placeholder="Name" type="text" required />
                 </div>
                 <div className="doodle-input-wrapper">
-                  <input className="doodle-input" name="email" placeholder="Email" type="email" required />
+                  <input className="doodle-input" value={email} onChange={(e) => setEmail(e.target.value)} name="email" placeholder="Email" type="email" required />
                 </div>
                 <div className="doodle-input-wrapper">
-                  <input className="doodle-input" name="password" placeholder="Password" type="password" required />
+                  <input className="doodle-input" value={password} onChange={(e) => setPassword(e.target.value)} name="password" placeholder="Password" type="password" required />
                 </div>
                 <button className="doodle-btn doodle-btn-alt" type="submit">Confirm!</button>
               </form>
