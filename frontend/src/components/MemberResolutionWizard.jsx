@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
 
-const MemberResolutionWizard = ({ isOpen, onClose, groupId }) => {
+const MemberResolutionWizard = ({ isOpen, onClose, groupId, onNextStep }) => {
   const fileInputRef = useRef(null);
   
   const [step, setStep] = useState(1); // 1 = Drop, 2 = Resolution
@@ -103,7 +103,8 @@ const MemberResolutionWizard = ({ isOpen, onClose, groupId }) => {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
-      alert('Members resolved successfully! Anomaly Detection will run in the next phase.');
+      if (onNextStep) onNextStep(importSessionId);
+      else alert('Members resolved successfully! Anomaly Detection will run in the next phase.');
       handleClose();
     } catch (err) {
       console.error('Resolution Error:', err);

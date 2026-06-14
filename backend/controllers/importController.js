@@ -233,16 +233,34 @@ const resolveImportMembers = async (req, res) => {
   }
 };
 
-const uploadCsvPreview = async (req, res) => {
-  const file = req.file;
-  if (!file) return res.status(400).json({ error: 'No CSV file uploaded' });
-
+const processImportSession = async (req, res) => {
   try {
-    const groupId = parseInt(req.params.groupId);
+    const { groupId, sessionId } = req.params;
+    const tempPath = path.join(__dirname, '..', 'uploads', `${sessionId}.csv`);
+    if (!fs.existsSync(tempPath)) return res.status(404).json({ error: 'Session not found' });
+
     let groupMembers = [];
     if (groupId) {
-      const group = await prisma.group.findUnique({ where: { id: groupId }, include: { members: { include: { user: true } } } });
+      const group = await prisma.group.findUnique({ where: { id: parseInt(groupId) }, include: { members: { include: { user: true } } } });
       if (group) groupMembers = group.members;
+    }
+    
+    const canonicalMembers = groupMembers.map(m => ({ id: m.userId, name: m.user.name }));
+
+    // Get resolutions for this session
+    const resolutions = await prisma.importMemberResolution.findMany({
+      where: { importSessionId: sessionId }
+    });
+    
+    // Build a map of rawName -> resolvedName for easy lookup
+    const resolutionMap = {};
+    for (const r of resolutions) {
+      if (r.resolutionType === 'MAP_EXISTING') {
+        const resolvedUser = canonicalMembers.find(c => c.id === parseInt(r.resolvedUserId));
+        if (resolvedUser) resolutionMap[r.csvMemberName] = resolvedUser.name;
+      } else if (r.resolutionType === 'CREATE_NEW_MEMBER' || r.resolutionType === 'CREATE_GUEST') {
+        resolutionMap[r.csvMemberName] = r.csvMemberName;
+      }
     }
 
     const rows = [];
@@ -250,7 +268,7 @@ const uploadCsvPreview = async (req, res) => {
     const autoFixes = [];
     let rowId = 0;
 
-    const stream = fs.createReadStream(file.path).pipe(csvParser());
+    const stream = fs.createReadStream(tempPath).pipe(csvParser());
 
     for await (let row of stream) {
       rowId++;
@@ -276,37 +294,91 @@ const uploadCsvPreview = async (req, res) => {
       
       // A01: COMMA_IN_AMOUNT
       if (amountStr.includes(',')) {
-        amountStr = amountStr.replace(/,/g, '');
-        autoFixes.push(`Row ${rowId}: Stripped comma from amount`);
+        const cleaned = amountStr.replace(/,/g, '');
+        autoFixes.push({
+          rowNumber: rowId,
+          anomalyType: 'FORMAT_ERROR',
+          tier: 1,
+          description: `Stripped comma from amount.`,
+          originalValue: amountStr,
+          suggestedFix: cleaned,
+          actionTaken: 'auto_fixed'
+        });
+        amountStr = cleaned;
       }
 
       // A05: SUBUNIT_PRECISION
       let amount = parseFloat(amountStr);
       if (!isNaN(amount) && amountStr.includes('.') && amountStr.split('.')[1].length > 2) {
-        amount = Math.round(amount * 100) / 100;
-        autoFixes.push(`Row ${rowId}: Rounded amount to 2 decimal places`);
+        const rounded = Math.round(amount * 100) / 100;
+        autoFixes.push({
+          rowNumber: rowId,
+          anomalyType: 'SUBUNIT_PRECISION',
+          tier: 1,
+          description: `Currency can't have 3 decimals. Rounded to 2dp.`,
+          originalValue: amountStr,
+          suggestedFix: rounded.toFixed(2),
+          actionTaken: 'auto_fixed'
+        });
+        amount = rounded;
       }
 
-      // A02: NONSTANDARD_DATE
+      // A02: NONSTANDARD_DATE (e.g. "Mar-14" -> "14-03-2026")
       if (date && /^[A-Za-z]{3}-\d{2}$/.test(date)) {
-        date = '14-03-2026'; // Auto fix per spec
-        autoFixes.push(`Row ${rowId}: Standardized date format`);
+        const parsed = parseDate(date);
+        if (parsed) {
+          const dd = String(parsed.getDate()).padStart(2, '0');
+          const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+          const yyyy = parsed.getFullYear();
+          const fixedDate = `${dd}-${mm}-${yyyy}`;
+          autoFixes.push({
+            rowNumber: rowId,
+            anomalyType: 'NONSTANDARD_DATE',
+            tier: 1,
+            description: `Parsed non-standard date "${date}" unambiguously.`,
+            originalValue: date,
+            suggestedFix: fixedDate,
+            actionTaken: 'auto_fixed'
+          });
+          date = fixedDate;
+        }
       }
       const parsedDate = parseDate(date);
 
       // A03 & A04: NAME_CASE_MISMATCH & NAME_TRAILING_SPACE
-      if (paidBy && paidBy !== paidBy.trim() || (paidBy && paidBy !== capitalize(paidBy))) {
-        const matched = fuzzyMatchMember(paidBy, groupMembers);
-        if (matched) {
-          paidBy = matched.user.name;
-          autoFixes.push(`Row ${rowId}: Normalized payer name to ${paidBy}`);
+      if (paidBy) {
+        const normResult = normaliseName(paidBy, canonicalMembers);
+        if (normResult.status === 'exact') {
+          if (paidBy !== normResult.resolvedName) {
+            autoFixes.push({
+              rowNumber: rowId,
+              anomalyType: 'NAME_CASE_MISMATCH',
+              tier: 1,
+              description: `paid_by "${paidBy}" matched to canonical member "${normResult.resolvedName}" after normalisation.`,
+              originalValue: paidBy,
+              suggestedFix: normResult.resolvedName,
+              actionTaken: 'auto_fixed'
+            });
+          }
+          paidBy = normResult.resolvedName;
+        } else if (resolutionMap[paidBy]) {
+          // If it was manually mapped in Tier 0
+          paidBy = resolutionMap[paidBy];
         }
       }
 
       // A06: REDUNDANT_SPLIT_DETAILS
       if (splitType === 'equal' && splitDetails) {
+        autoFixes.push({
+          rowNumber: rowId,
+          anomalyType: 'REDUNDANT_SPLIT_DETAILS',
+          tier: 1,
+          description: `Equal shares with explicit details. Ignored details.`,
+          originalValue: splitDetails,
+          suggestedFix: '',
+          actionTaken: 'auto_fixed'
+        });
         splitDetails = '';
-        autoFixes.push(`Row ${rowId}: Ignored redundant split_details for equal split`);
       }
 
       // Update row with auto-fixes
@@ -396,10 +468,24 @@ const uploadCsvPreview = async (req, res) => {
         hasTier3or4 = true;
       }
 
-      // A19: AMBIGUOUS_DATE
-      if (date === '04-05-2026') {
-        issues.push({ rowId, type: 'AMBIGUOUS_DATE', tier: 4, message: `Row ${rowId}: Ambiguous date format. Is this April 5 or May 4?`, rowData: row });
-        hasTier3or4 = true;
+      // A19: AMBIGUOUS_DATE — any date where day <= 12 (could be MM-DD or DD-MM)
+      if (date) {
+        const parts = date.split('-');
+        if (parts.length === 3) {
+          const d = parseInt(parts[0]);
+          const m = parseInt(parts[1]);
+          if (d <= 12 && m <= 12 && d !== m) {
+            // Both interpretations valid: dd-mm or mm-dd
+            const interp1 = `${String(d).padStart(2,'0')}-${String(m).padStart(2,'0')}-${parts[2]}`; // DD-MM (standard)
+            const interp2 = `${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}-${parts[2]}`; // if it was MM-DD
+            issues.push({
+              rowId, type: 'AMBIGUOUS_DATE', tier: 4,
+              message: `Row ${rowId}: Date "${date}" is ambiguous — is it ${d} ${new Date(2026, m-1, 1).toLocaleString('en',{month:'short'})} or ${m} ${new Date(2026, d-1, 1).toLocaleString('en',{month:'short'})}?`,
+              rowData: row, interp1, interp2
+            });
+            hasTier3or4 = true;
+          }
+        }
       }
 
       // A20: MEMBER_AFTER_LEAVE
@@ -416,7 +502,12 @@ const uploadCsvPreview = async (req, res) => {
             if (member.leftAt && member.leftAt < parsedDate) isTimeTraveler = true;
             
             if (isTimeTraveler) {
-              issues.push({ rowId, type: 'MEMBER_AFTER_LEAVE', tier: 4, message: `Row ${rowId}: ${p} was not in the group on ${parsedDate.toDateString()}`, rowData: row });
+              issues.push({
+                rowId, type: 'MEMBER_AFTER_LEAVE', tier: 4,
+                message: `Row ${rowId}: ${p} was not in the group on ${parsedDate.toDateString()}`,
+                rowData: row,
+                memberName: p
+              });
               hasTier3or4 = true;
             }
           }
@@ -424,14 +515,13 @@ const uploadCsvPreview = async (req, res) => {
       }
 
       // Duplicate Detection (A15 EXACT & A16 CONFLICTING)
-      // Check against previous rows
       const dupCandidates = rows.filter(r => r.date === date && r.split_with === splitWith);
       for (const dup of dupCandidates) {
         if (dup.paid_by === paidBy && dup.amount === amount) {
-          issues.push({ rowId, type: 'EXACT_DUPLICATE', tier: 4, message: `Row ${rowId} is an EXACT duplicate of Row ${dup.rowId}`, rowData: row, pairId: dup.rowId });
+          issues.push({ rowId, type: 'EXACT_DUPLICATE', tier: 4, message: `Row ${rowId} is an EXACT duplicate of Row ${dup.rowId}`, rowData: row, pairId: dup.rowId, pairRowData: dup });
           hasTier3or4 = true;
-        } else if (getLevenshteinDistance(dup.description.toLowerCase(), desc.toLowerCase()) <= 5) {
-          issues.push({ rowId, type: 'CONFLICTING_DUPLICATE', tier: 4, message: `Row ${rowId} conflicts with Row ${dup.rowId} (Different amount/payer)`, rowData: row, pairId: dup.rowId });
+        } else if (getLevenshteinDistance((dup.description || '').toLowerCase(), desc.toLowerCase()) <= 5) {
+          issues.push({ rowId, type: 'CONFLICTING_DUPLICATE', tier: 4, message: `Row ${rowId} conflicts with Row ${dup.rowId} (different amount/payer)`, rowData: row, pairId: dup.rowId, pairRowData: dup });
           hasTier3or4 = true;
         }
       }
@@ -440,21 +530,20 @@ const uploadCsvPreview = async (req, res) => {
       rows.push(row);
     }
 
-    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
 
     res.json({
-      fileName: file.originalname,
-      fileSize: file.size,
+      fileName: `import_${sessionId}.csv`,
       totalRows: rowId,
       autoFixes,
       issues,
+      groupMembersList: canonicalMembers,
       validRows: rows.filter(r => !issues.some(i => i.rowId === r.rowId && i.tier >= 3)),
       previewRows: rows.slice(0, 10)
     });
 
   } catch (error) {
-    console.error('CSV Preview Upload Error:', error);
-    if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    console.error('CSV Process Error:', error);
     res.status(500).json({ error: 'Internal server error while processing CSV' });
   }
 };
@@ -467,5 +556,5 @@ module.exports = {
   initImportSession,
   getImportMembers,
   resolveImportMembers,
-  uploadCsvPreview
+  processImportSession
 };

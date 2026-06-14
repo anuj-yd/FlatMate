@@ -25,6 +25,7 @@ const GroupDetails = () => {
   const [settlements, setSettlements] = useState([]);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
+  const [currentSessionId, setCurrentSessionId] = useState(null);
   const [isMemberResolutionModalOpen, setIsMemberResolutionModalOpen] = useState(false);
   const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
   const [selectedUserForBalance, setSelectedUserForBalance] = useState(null);
@@ -405,11 +406,17 @@ const GroupDetails = () => {
         isOpen={isMemberResolutionModalOpen}
         onClose={() => setIsMemberResolutionModalOpen(false)}
         groupId={id}
+        onNextStep={(sessionId) => {
+          setCurrentSessionId(sessionId);
+          setIsMemberResolutionModalOpen(false);
+          setIsCsvModalOpen(true);
+        }}
       />
       <InteractiveCSVWizard 
         isOpen={isCsvModalOpen} 
-        onClose={() => setIsCsvModalOpen(false)} 
+        onClose={() => { setIsCsvModalOpen(false); setCurrentSessionId(null); }} 
         groupId={id}
+        sessionId={currentSessionId}
         onUploadSuccess={fetchGroupAndMembers}
       />
 

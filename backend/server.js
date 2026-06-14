@@ -10,7 +10,7 @@ const { getGroupBalances, getUserBalance } = require('./controllers/balanceContr
 const { uploadCsvExpenses } = require('./controllers/csvController');
 const { createSettlement, getSettlements, getSettlementById, updateSettlement, deleteSettlement } = require('./controllers/settlementController');
 const { getActivityFeed } = require('./controllers/activityController');
-const { initImportSession, getImportMembers, resolveImportMembers, uploadCsvPreview } = require('./controllers/importController');
+const { initImportSession, getImportMembers, resolveImportMembers, processImportSession } = require('./controllers/importController');
 const { sendReminderEmail } = require('./controllers/reminderController');
 const authenticateToken = require('./middleware/auth');
 const prisma = require('./prismaClient');
@@ -837,7 +837,7 @@ app.post('/api/groups/:groupId/imports/init', authenticateToken, upload.single('
 app.get('/api/groups/:groupId/imports/:sessionId/members', authenticateToken, getImportMembers);
 app.post('/api/groups/:groupId/imports/:sessionId/member-resolutions', authenticateToken, resolveImportMembers);
 
-app.post('/api/groups/:groupId/imports/preview', authenticateToken, upload.single('file'), uploadCsvPreview);
+app.post('/api/groups/:groupId/imports/:sessionId/process', authenticateToken, processImportSession);
 
 app.listen(3000, () => {
     console.log('Server started on port 3000');

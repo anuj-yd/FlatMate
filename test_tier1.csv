@@ -1,0 +1,8 @@
+date,description,paid_by,amount,currency,split_type,split_with,split_details,notes
+15-06-2026,Goa hotel,Aisha,"1,200",INR,equal,Aisha;Rohan;Priya,,
+Mar-14,Flight tickets,Rohan,3500,INR,equal,Aisha;Rohan;Priya,,
+15-06-2026,Taxi to airport,priya,450,INR,equal,Aisha;Rohan;Priya,,A03 name casing
+15-06-2026,Snacks,rohan ,120,INR,equal,Aisha;Rohan;Priya,,A04 trailing space
+15-06-2026,Dinner,Aisha,899.995,INR,equal,Aisha;Rohan;Priya,,A05 sub-paisa
+15-06-2026,Breakfast,Rohan,600,INR,equal,Aisha;Rohan;Priya,1;1;1,A06 equal+details
+15-06-2026,Coffee,Aisha,80,,equal,Aisha;Rohan;Priya,,A07 missing currency - forgot to set
