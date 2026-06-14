@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import Auth from './components/Auth'
 import Home from './components/Home'
 import GroupDetails from './components/GroupDetails'
+import RecentActivity from './components/RecentActivity'
 import ExpenseDetails from './components/ExpenseDetails'
 import './App.css'
 
@@ -18,6 +19,7 @@ function App() {
         
         <Route path="/" element={<Home />} />
         <Route path="/group/:id" element={<GroupDetails />} />
+        <Route path="/activity" element={<RecentActivity />} />
         <Route path="/expense/:id" element={<ExpenseDetails />} />
 
         {/* Fallback to home */}

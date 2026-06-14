@@ -39,7 +39,11 @@ const CsvUploadModal = ({ isOpen, onClose, groupId, onUploadSuccess }) => {
       onClose();
     } catch (err) {
       console.error('CSV upload error:', err);
-      setError(err.response?.data?.error || 'Failed to upload CSV. Please check the file format.');
+      if (err.response?.data?.details && Array.isArray(err.response.data.details)) {
+        setError(`CSV Errors:\n${err.response.data.details.join('\n')}`);
+      } else {
+        setError(err.response?.data?.error || 'Failed to upload CSV. Please check the file format.');
+      }
     } finally {
       setUploading(false);
     }
@@ -53,7 +57,7 @@ const CsvUploadModal = ({ isOpen, onClose, groupId, onUploadSuccess }) => {
           <button type="button" onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--ink)', fontSize: '24px', cursor: 'pointer', fontWeight: 'bold' }}>✖</button>
         </div>
 
-        {error && <div className="error-alert">{error}</div>}
+        {error && <div className="error-alert" style={{ whiteSpace: 'pre-wrap' }}>{error}</div>}
 
         <p style={{ marginBottom: '20px', color: '#555', lineHeight: '1.5' }}>
           Upload a CSV file containing expenses. The file should have columns for <strong>Date, Description, Amount, Currency, PayerEmail, SplitType</strong>, and columns for participant emails.

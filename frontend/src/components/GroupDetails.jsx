@@ -3,8 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import axios from 'axios';
 import ExpenseFormModal from './ExpenseFormModal';
-import CsvUploadModal from './CsvUploadModal';
+import CsvImportPreviewModal from './CsvImportPreviewModal';
 import BalanceDetailsModal from './BalanceDetailsModal';
+import SettlementFormModal from './SettlementFormModal';
 
 const GroupDetails = () => {
   const { id } = useParams();
@@ -20,9 +21,12 @@ const GroupDetails = () => {
   
   const [expenses, setExpenses] = useState([]);
   const [balances, setBalances] = useState([]);
+  const [settlements, setSettlements] = useState([]);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
+  const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
   const [selectedUserForBalance, setSelectedUserForBalance] = useState(null);
+  const [activeTab, setActiveTab] = useState('expenses'); // 'expenses' or 'settlements'
 
   const fetchGroupAndMembers = async () => {
     try {
@@ -51,6 +55,11 @@ const GroupDetails = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setBalances(balancesRes.data.members);
+
+      const settlementsRes = await axios.get(`http://localhost:3000/api/groups/${id}/settlements`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSettlements(settlementsRes.data);
     } catch (error) {
       console.error('Error fetching group details:', error);
       alert('Failed to load group or access denied.');
@@ -126,10 +135,22 @@ const GroupDetails = () => {
     return { type: 'not_involved' };
   };
 
+  const handleDeleteSettlement = async (settlementId) => {
+    if (!window.confirm('Are you sure you want to delete this settlement?')) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`http://localhost:3000/api/settlements/${settlementId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchGroupAndMembers();
+    } catch (error) {
+      console.error('Failed to delete settlement', error);
+      alert('Failed to delete settlement.');
+    }
+  };
+
   if (loading) return <div style={{ padding: '20px' }}>Loading...</div>;
   if (!group) return null;
-
-  const balances = calculateBalances();
 
   return (
     <Container>
@@ -139,7 +160,7 @@ const GroupDetails = () => {
         <div className="left-sidebar">
           <div className="nav-links">
             <button className="nav-item" onClick={() => navigate('/')}>🏠 Dashboard</button>
-            <button className="nav-item">📊 Recent activity</button>
+            <button className="nav-item" onClick={() => navigate('/activity')}>📊 Recent activity</button>
             <button className="nav-item">🧾 All expenses</button>
           </div>
 
@@ -171,10 +192,27 @@ const GroupDetails = () => {
             <div className="header-actions">
               <button className="doodle-btn-small" style={{ background: '#ff7b54', color: 'white' }} onClick={() => setIsExpenseModalOpen(true)}>Add an expense</button>
               <button className="doodle-btn-small" style={{ background: '#5f9ea0', color: 'white' }} onClick={() => setIsCsvModalOpen(true)}>Import CSV</button>
+              <button className="doodle-btn-small" style={{ background: '#2ecc71', color: 'white' }} onClick={() => setIsSettlementModalOpen(true)}>Settle up</button>
             </div>
           </div>
 
-          {expenses.length === 0 ? (
+          <div style={{ display: 'flex', gap: '20px', marginBottom: '20px', borderBottom: '2px solid var(--ink)' }}>
+            <button 
+              onClick={() => setActiveTab('expenses')}
+              style={{ background: 'none', border: 'none', fontSize: '18px', fontWeight: 'bold', padding: '10px 0', borderBottom: activeTab === 'expenses' ? '4px solid var(--ink)' : 'none', color: activeTab === 'expenses' ? 'var(--ink)' : '#888', cursor: 'pointer' }}
+            >
+              Expenses
+            </button>
+            <button 
+              onClick={() => setActiveTab('settlements')}
+              style={{ background: 'none', border: 'none', fontSize: '18px', fontWeight: 'bold', padding: '10px 0', borderBottom: activeTab === 'settlements' ? '4px solid var(--ink)' : 'none', color: activeTab === 'settlements' ? 'var(--ink)' : '#888', cursor: 'pointer' }}
+            >
+              Settlements
+            </button>
+          </div>
+
+          {activeTab === 'expenses' ? (
+            expenses.length === 0 ? (
             <div className="empty-state">
               <h2 style={{ fontSize: '32px', color: 'var(--ink)', marginBottom: '20px', border: 'none' }}>You have not added any expenses yet</h2>
               <p style={{ fontSize: '20px', color: '#666' }}>To add a new expense, click the orange "Add an expense" button.</p>
@@ -237,6 +275,42 @@ const GroupDetails = () => {
                 })}
               </div>
             </div>
+          )) : (
+            settlements.length === 0 ? (
+              <div className="empty-state">
+                <h2 style={{ fontSize: '32px', color: 'var(--ink)', marginBottom: '20px', border: 'none' }}>No settlements yet</h2>
+                <p style={{ fontSize: '20px', color: '#666' }}>To record a payment, click the green "Settle up" button.</p>
+              </div>
+            ) : (
+              <div className="expenses-container">
+                <div className="expenses-list">
+                  {settlements.map(s => {
+                    const sDate = new Date(s.settlementDate);
+                    return (
+                      <div key={s.id} className="expense-row doodle-group-card" style={{ borderLeft: '5px solid #2ecc71' }}>
+                        <div className="expense-date">
+                          <span className="month">{sDate.toLocaleString('default', { month: 'short' }).toUpperCase()}</span>
+                          <span className="day">{sDate.getDate()}</span>
+                        </div>
+                        <div className="expense-icon" style={{ background: '#e8f8f5' }}>💸</div>
+                        <div className="expense-details">
+                          <div className="expense-desc">{s.payer.name} paid {s.receiver.name}</div>
+                          {s.notes && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>{s.notes}</div>}
+                        </div>
+                        <div className="expense-summary">
+                          <div className="summary-block paid">
+                            <span className="value" style={{ color: '#2ecc71' }}>₹ {s.amount.toFixed(2)}</span>
+                          </div>
+                        </div>
+                        <div style={{ marginLeft: '10px' }}>
+                          <button onClick={() => handleDeleteSettlement(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e74c3c', fontSize: '16px' }}>🗑️</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )
           )}
         </div>
 
@@ -306,21 +380,33 @@ const GroupDetails = () => {
         </div>
       )}
 
-      {isCsvModalOpen && (
-        <CsvUploadModal 
-          isOpen={isCsvModalOpen} 
-          onClose={() => setIsCsvModalOpen(false)} 
-          groupId={id}
-          onUploadSuccess={fetchGroupAndMembers}
-        />
-      )}
+      <CsvImportPreviewModal 
+        isOpen={isCsvModalOpen} 
+        onClose={() => setIsCsvModalOpen(false)} 
+        groupId={id}
+        onUploadSuccess={fetchGroupAndMembers}
+      />
 
       {selectedUserForBalance && (
         <BalanceDetailsModal 
-          isOpen={!!selectedUserForBalance}
-          onClose={() => setSelectedUserForBalance(null)}
-          groupId={id}
+          isOpen={!!selectedUserForBalance} 
+          onClose={() => setSelectedUserForBalance(null)} 
+          groupId={id} 
           userId={selectedUserForBalance}
+          currentMembers={membersData.currentMembers}
+        />
+      )}
+
+      {isSettlementModalOpen && (
+        <SettlementFormModal 
+          isOpen={isSettlementModalOpen}
+          onClose={() => setIsSettlementModalOpen(false)}
+          groupId={id}
+          currentMembers={membersData.currentMembers}
+          onSuccess={() => {
+            setIsSettlementModalOpen(false);
+            fetchGroupAndMembers();
+          }}
         />
       )}
 

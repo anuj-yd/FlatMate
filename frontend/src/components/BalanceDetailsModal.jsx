@@ -1,10 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
+import SettlementFormModal from './SettlementFormModal';
 
-const BalanceDetailsModal = ({ isOpen, onClose, groupId, userId }) => {
+const BalanceDetailsModal = ({ isOpen, onClose, groupId, userId, onSettlementAdded, currentMembers }) => {
   const [details, setDetails] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  // For the Settle Up button in the repayment list
+  const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
+  const [settlementData, setSettlementData] = useState(null);
 
   useEffect(() => {
     if (isOpen && groupId && userId) {
@@ -22,10 +27,21 @@ const BalanceDetailsModal = ({ isOpen, onClose, groupId, userId }) => {
       setDetails(res.data);
     } catch (err) {
       console.error('Failed to fetch balance details', err);
-      alert('Failed to load balance breakdown.');
+      alert('Failed to load user profile.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSettleUp = (repayment) => {
+    // Determine payer and receiver based on the repayment object
+    // repayment.from owes repayment.to
+    setSettlementData({
+      payerId: repayment.from.userId,
+      receiverId: repayment.to.userId,
+      amount: repayment.amount
+    });
+    setIsSettlementModalOpen(true);
   };
 
   if (!isOpen) return null;
@@ -33,88 +49,90 @@ const BalanceDetailsModal = ({ isOpen, onClose, groupId, userId }) => {
   return (
     <div className="modal-overlay">
       <ModalContainer>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <div className="doodle-title">{details?.user || 'User'}'s Balances</div>
-          <button type="button" onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--ink)', fontSize: '24px', cursor: 'pointer', fontWeight: 'bold' }}>✖</button>
-        </div>
+        <button type="button" className="close-btn" onClick={onClose}>✖</button>
 
         {loading ? (
-          <p>Loading breakdown...</p>
+          <p>Loading user profile...</p>
         ) : details ? (
-          <div>
-            <div className="summary-cards">
-              <div className="card paid">
-                <span>Total Paid</span>
-                <strong>₹ {details.totalPaid.toFixed(2)}</strong>
+          <div className="profile-content">
+            
+            {/* User Profile Header */}
+            <div className="profile-header">
+              <div className="avatar">
+                {/* A geometric placeholder avatar as shown in screenshot */}
+                <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="40" cy="40" r="40" fill="#B2EBF2"/>
+                  <path d="M40 0C17.9086 0 0 17.9086 0 40C0 62.0914 17.9086 80 40 80V0Z" fill="#00838F"/>
+                  <path d="M0 40C0 62.0914 17.9086 80 40 80L80 40H0Z" fill="#006064"/>
+                  <path d="M80 40C80 17.9086 62.0914 0 40 0L0 40H80Z" fill="#4DD0E1"/>
+                </svg>
               </div>
-              <div className="card owed">
-                <span>Total Share</span>
-                <strong>₹ {details.totalOwed.toFixed(2)}</strong>
-              </div>
-              <div className={`card net ${details.netBalance >= 0 ? 'positive' : 'negative'}`}>
-                <span>Net Balance</span>
-                <strong>{details.netBalance > 0 ? '+' : ''}₹ {details.netBalance.toFixed(2)}</strong>
+              <div className="user-info">
+                <h1>{details.user}</h1>
+                <p className="email">{details.userEmail || 'Email not available'}</p>
+                <div className="header-actions">
+                  <button className="btn-orange">Friend settings</button>
+                  <button className="btn-light-orange">Send a balance reminder</button>
+                </div>
               </div>
             </div>
 
-            <h3 style={{ margin: '20px 0 10px', fontSize: '18px' }}>Expense Breakdown</h3>
-            <div className="breakdown-list">
-              {details.breakdown.length === 0 ? (
-                <p style={{ color: '#666' }}>No expenses involved.</p>
+            <hr className="divider" />
+
+            {/* Suggested Repayments */}
+            <div className="repayments-section">
+              <h3 className="section-title">SUGGESTED REPAYMENTS FOR "{details.groupName?.toUpperCase() || 'GROUP'}"</h3>
+              
+              {(!details.repayments || details.repayments.length === 0) ? (
+                <p className="no-debts">No suggested repayments. Everyone is settled up!</p>
               ) : (
-                details.breakdown.map((b, idx) => (
-                  <div key={idx} className="breakdown-item">
-                    <div className="item-header">
-                      <strong>{b.description}</strong>
-                      <span className="date">{new Date(b.date).toLocaleDateString()}</span>
-                    </div>
-                    <div className="item-details">
-                      <div className="detail-col">
-                        <span className="label">Total Amount</span>
-                        <span>₹ {b.amount.toFixed(2)}</span>
+                <ul className="repayments-list">
+                  {details.repayments.map((r, idx) => (
+                    <li key={idx} className="repayment-item">
+                      <div className="repayment-text">
+                        <span className="bullet">•</span> 
+                        <strong>{r.from.name}</strong> owes <span className="amount">₹{r.amount.toFixed(2)}</span> to <strong>{r.to.name}</strong>
                       </div>
-                      <div className="detail-col">
-                        <span className="label">Paid By</span>
-                        <span>{b.payer}</span>
-                      </div>
-                      <div className="detail-col">
-                        <span className="label">Their Share</span>
-                        <span>₹ {b.userShare.toFixed(2)}</span>
-                      </div>
-                      <div className={`detail-col impact ${b.impact >= 0 ? 'positive' : 'negative'}`}>
-                        <span className="label">Impact</span>
-                        <strong>{b.impact > 0 ? '+' : ''}₹ {b.impact.toFixed(2)}</strong>
-                      </div>
-                    </div>
-                  </div>
-                ))
+                      <button className="btn-settle" onClick={() => handleSettleUp(r)}>Settle up</button>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
           </div>
         ) : null}
       </ModalContainer>
+
+      {/* Settle Up Form Modal for Repayment rows */}
+      {isSettlementModalOpen && settlementData && (
+        <SettlementFormModal 
+          isOpen={isSettlementModalOpen}
+          onClose={() => setIsSettlementModalOpen(false)}
+          groupId={groupId}
+          currentMembers={currentMembers || []}
+          onSuccess={() => {
+            fetchBalanceDetails();
+            if (onSettlementAdded) onSettlementAdded();
+            setIsSettlementModalOpen(false);
+          }}
+          settlementToEdit={settlementData}
+        />
+      )}
     </div>
   );
 };
 
 const ModalContainer = styled.div`
-  background-color: #fff9e6;
-  background-image: repeating-linear-gradient(
-    transparent,
-    transparent 28px,
-    rgba(0, 0, 0, 0.06) 28px,
-    rgba(0, 0, 0, 0.06) 30px
-  );
-  background-position: 0 15px;
-  padding: 30px 40px;
-  border-radius: 8px 24px 8px 24px / 24px 8px 24px 8px;
-  border: 2px solid var(--ink);
-  box-shadow: 4px 4px 0px var(--ink);
-  width: 600px;
+  background-color: #ffffff;
+  padding: 30px;
+  border-radius: 8px;
+  width: 650px;
   max-width: 95vw;
   max-height: 85vh;
   overflow-y: auto;
-  font-family: inherit;
+  position: relative;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
 
   &::-webkit-scrollbar {
     display: none;
@@ -122,95 +140,137 @@ const ModalContainer = styled.div`
   -ms-overflow-style: none;
   scrollbar-width: none;
 
-  .doodle-title {
-    font-size: 28px;
-    font-weight: 900;
-    color: var(--ink);
-    margin: 5px 0 10px 0;
-    text-transform: uppercase;
-    transform: rotate(-1deg);
-    text-shadow: 1px 1px 0px rgba(0, 0, 0, 0.1);
+  .close-btn {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    background: transparent;
+    border: none;
+    color: #b3b3b3;
+    font-size: 20px;
+    cursor: pointer;
+    font-weight: bold;
+    &:hover { color: #555; }
   }
 
-  .summary-cards {
+  .profile-header {
     display: flex;
-    gap: 15px;
-    margin-bottom: 20px;
-  }
-
-  .card {
-    flex: 1;
-    background: white;
-    padding: 15px;
-    border-radius: 12px;
-    border: 2px solid var(--ink);
-    box-shadow: 2px 2px 0px var(--ink);
-    display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 5px;
-    
-    span {
-      font-size: 12px;
-      text-transform: uppercase;
-      font-weight: bold;
-      color: #666;
+    gap: 20px;
+    margin-bottom: 25px;
+
+    .avatar {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      overflow: hidden;
+      flex-shrink: 0;
     }
-    
-    strong {
-      font-size: 20px;
+
+    .user-info {
+      h1 {
+        margin: 0 0 5px 0;
+        font-size: 24px;
+        color: #333;
+        font-weight: bold;
+      }
+      .email {
+        margin: 0 0 15px 0;
+        color: #999;
+        font-size: 14px;
+      }
     }
   }
 
-  .card.paid strong { color: #5f9ea0; }
-  .card.owed strong { color: #ff6b6b; }
-  .card.net.positive strong { color: #2ecc71; }
-  .card.net.negative strong { color: #e74c3c; }
-
-  .breakdown-list {
+  .header-actions {
     display: flex;
-    flex-direction: column;
-    gap: 15px;
+    gap: 10px;
+
+    button {
+      padding: 6px 14px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .btn-orange {
+      background-color: #ff652f;
+      color: white;
+      border-color: #e55b2a;
+      &:hover { background-color: #e55b2a; }
+    }
+
+    .btn-light-orange {
+      background-color: #ffa07a;
+      color: white;
+      border-color: #e5906e;
+      &:hover { background-color: #e5906e; }
+    }
   }
 
-  .breakdown-item {
-    background: white;
-    border: 2px solid var(--ink);
-    border-radius: 12px;
-    padding: 15px;
+  .divider {
+    border: 0;
+    height: 1px;
+    background: #eee;
+    margin: 25px 0;
   }
 
-  .item-header {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 10px;
-    border-bottom: 1px dashed #ccc;
-    padding-bottom: 5px;
-    
-    strong { font-size: 16px; }
-    .date { color: #888; font-size: 14px; }
-  }
-
-  .item-details {
-    display: flex;
-    justify-content: space-between;
-    font-size: 14px;
-  }
-
-  .detail-col {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    
-    .label {
-      font-size: 11px;
+  .repayments-section {
+    .section-title {
+      font-size: 14px;
       color: #888;
-      text-transform: uppercase;
+      margin-bottom: 20px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .no-debts {
+      color: #999;
+      font-style: italic;
+    }
+
+    .repayments-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .repayment-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+      font-size: 16px;
+      color: #333;
+
+      .repayment-text {
+        .bullet {
+          color: #333;
+          margin-right: 8px;
+          font-weight: bold;
+        }
+        .amount {
+          color: #5bc5a7;
+          font-weight: 600;
+        }
+      }
+
+      .btn-settle {
+        background-color: #5bc5a7;
+        color: white;
+        border: 1px solid #52b196;
+        border-radius: 4px;
+        padding: 5px 15px;
+        font-size: 14px;
+        cursor: pointer;
+        font-weight: 500;
+        &:hover { background-color: #52b196; }
+      }
     }
   }
-
-  .impact.positive strong { color: #2ecc71; }
-  .impact.negative strong { color: #e74c3c; }
 `;
 
 export default BalanceDetailsModal;

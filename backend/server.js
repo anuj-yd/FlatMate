@@ -8,6 +8,9 @@ const multer = require('multer');
 const upload = multer({ dest: 'uploads/' });
 const { getGroupBalances, getUserBalance } = require('./controllers/balanceController');
 const { uploadCsvExpenses } = require('./controllers/csvController');
+const { createSettlement, getSettlements, getSettlementById, updateSettlement, deleteSettlement } = require('./controllers/settlementController');
+const { getActivityFeed } = require('./controllers/activityController');
+const { uploadCsvPreview } = require('./controllers/importController');
 const authenticateToken = require('./middleware/auth');
 const prisma = require('./prismaClient');
 
@@ -686,6 +689,19 @@ app.get('/api/groups/:groupId/balances/:userId', authenticateToken, getUserBalan
 
 // 7. CSV Upload API
 app.post('/api/groups/:groupId/expenses/csv', authenticateToken, upload.single('file'), uploadCsvExpenses);
+
+// 8. Settlement APIs
+app.post('/api/groups/:groupId/settlements', authenticateToken, createSettlement);
+app.get('/api/groups/:groupId/settlements', authenticateToken, getSettlements);
+app.get('/api/settlements/:settlementId', authenticateToken, getSettlementById);
+app.put('/api/settlements/:settlementId', authenticateToken, updateSettlement);
+app.delete('/api/settlements/:settlementId', authenticateToken, deleteSettlement);
+
+// 9. Activity Feed API
+app.get('/api/activity', authenticateToken, getActivityFeed);
+
+// 10. Imports API (Preview)
+app.post('/api/imports/upload', authenticateToken, upload.single('file'), uploadCsvPreview);
 
 app.listen(3000, () => {
     console.log('Server started on port 3000');

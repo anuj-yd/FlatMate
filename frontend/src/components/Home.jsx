@@ -149,6 +149,7 @@ const Home = () => {
       </nav>
 
       <main className="dashboard-content">
+
         <header className="greeting">
           <h1>Welcome back, {user?.name?.split(' ')[0] || 'Roomie'}! 👋</h1>
           <p>Here's what's happening in your flats.</p>
