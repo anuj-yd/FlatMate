@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const authenticateToken = require('./middleware/auth');
 const { Pool } = require('pg');
 const { PrismaPg } = require('@prisma/adapter-pg');
 const { PrismaClient } = require('./generated/prisma');
@@ -107,6 +108,26 @@ app.post('/api/login', async (req, res) => {
     } catch (error) {
         console.error('Login error:', error);
         return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Example Protected Route
+app.get('/api/me', authenticateToken, async (req, res) => {
+    try {
+        // req.user comes from the authenticateToken middleware
+        const user = await prisma.user.findUnique({
+            where: { id: req.user.userId }
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const { password, ...userWithoutPassword } = user;
+        res.json({ user: userWithoutPassword });
+    } catch (error) {
+        console.error('Protected route error:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
