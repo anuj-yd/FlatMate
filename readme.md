@@ -25,13 +25,13 @@ Since Prisma is used for database management, you need to generate the Prisma cl
 ```bash
 cd backend
 npx prisma generate
-npx prisma db push
+npx prisma migrate dev --name init
 ```
 
 #### What do these commands do and why do we need them?
 - **`npx prisma generate`**: This command reads your `schema.prisma` file and generates the Prisma Client (a customized, type-safe query builder) inside your `node_modules`. You need to run this whenever you update your schema so that your backend code can autocomplete and safely query your database using the latest models.
 
-- **`npx prisma db push`**: This command takes the models defined in your `schema.prisma` file and directly updates your actual database schema (creates tables, columns, etc.) to match it. It's used during development to quickly sync your database structure without dealing with complex migration files.
+- **`npx prisma migrate dev --name init`**: This command reads your Prisma schema, creates a migration file (a history record of your database changes) inside the `prisma/migrations` folder, and applies those changes to your actual PostgreSQL database (like creating the `User` table). It ensures your database schema is properly tracked and synced with your code.
 
 *Note: Make sure your `.env` file contains the correct database connection string (`DATABASE_URL`).*
 
