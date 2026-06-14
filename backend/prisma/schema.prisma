@@ -31,6 +31,9 @@ model User {
   settlementsPaid      Settlement[] @relation("SettlementPayer")
   settlementsReceived  Settlement[] @relation("SettlementReceiver")
   settlementsCreated   Settlement[] @relation("SettlementCreator")
+
+  remindersSent      Reminder[] @relation("ReminderSender")
+  remindersReceived  Reminder[] @relation("ReminderReceiver")
 }
 
 model Group {
@@ -43,6 +46,7 @@ model Group {
   members   GroupMember[]
   expenses  Expense[]
   settlements Settlement[]
+  reminders Reminder[]
 }
 
 model GroupMember {
@@ -116,4 +120,19 @@ model Settlement {
   creator         User      @relation("SettlementCreator", fields: [createdBy], references: [id])
   
   createdAt       DateTime  @default(now())
+}
+
+model Reminder {
+  id          Int      @id @default(autoincrement())
+  amount      Float
+  createdAt   DateTime @default(now())
+
+  groupId     Int
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  senderId    Int
+  sender      User     @relation("ReminderSender", fields: [senderId], references: [id])
+
+  receiverId  Int
+  receiver    User     @relation("ReminderReceiver", fields: [receiverId], references: [id])
 }

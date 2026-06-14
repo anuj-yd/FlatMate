@@ -52,7 +52,19 @@ const getActivityFeed = async (req, res) => {
       take: 30
     });
 
-    // 5. Combine and format
+    // 5. Fetch Reminders
+    const reminders = await prisma.reminder.findMany({
+      where: { groupId: { in: groupIds } },
+      include: {
+        group: { select: { name: true } },
+        sender: { select: { id: true, name: true } },
+        receiver: { select: { id: true, name: true } }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 30
+    });
+
+    // 6. Combine and format
     const activities = [];
 
     // Process Expenses
@@ -131,6 +143,27 @@ const getActivityFeed = async (req, res) => {
         type: 'group',
         date: g.createdAt,
         title: `${creatorName} created the group "${g.name}".`,
+        impactText: null,
+        impactType: 'neutral'
+      });
+    });
+
+    // Process Reminders
+    reminders.forEach(r => {
+      let title = '';
+      if (r.senderId === userId) {
+        title = `You sent a reminder to ${r.receiver.name} for ₹${r.amount.toFixed(2)} in "${r.group.name}".`;
+      } else if (r.receiverId === userId) {
+        title = `${r.sender.name} sent you a reminder for ₹${r.amount.toFixed(2)} in "${r.group.name}".`;
+      } else {
+        title = `${r.sender.name} sent a reminder to ${r.receiver.name} for ₹${r.amount.toFixed(2)} in "${r.group.name}".`;
+      }
+
+      activities.push({
+        id: `rem_${r.id}`,
+        type: 'reminder',
+        date: r.createdAt,
+        title,
         impactText: null,
         impactType: 'neutral'
       });

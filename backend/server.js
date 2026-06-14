@@ -11,6 +11,7 @@ const { uploadCsvExpenses } = require('./controllers/csvController');
 const { createSettlement, getSettlements, getSettlementById, updateSettlement, deleteSettlement } = require('./controllers/settlementController');
 const { getActivityFeed } = require('./controllers/activityController');
 const { uploadCsvPreview } = require('./controllers/importController');
+const { sendReminderEmail } = require('./controllers/reminderController');
 const authenticateToken = require('./middleware/auth');
 const prisma = require('./prismaClient');
 
@@ -690,7 +691,10 @@ app.get('/api/groups/:groupId/balances/:userId', authenticateToken, getUserBalan
 // 7. CSV Upload API
 app.post('/api/groups/:groupId/expenses/csv', authenticateToken, upload.single('file'), uploadCsvExpenses);
 
-// 8. Settlement APIs
+// 8. Reminders API
+app.post('/api/groups/:groupId/reminders/:userId', authenticateToken, sendReminderEmail);
+
+// Settlements APIs
 app.post('/api/groups/:groupId/settlements', authenticateToken, createSettlement);
 app.get('/api/groups/:groupId/settlements', authenticateToken, getSettlements);
 app.get('/api/settlements/:settlementId', authenticateToken, getSettlementById);

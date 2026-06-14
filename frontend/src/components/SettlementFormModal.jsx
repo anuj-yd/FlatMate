@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
 
-const SettlementFormModal = ({ isOpen, onClose, groupId, currentMembers, onSuccess, settlementToEdit }) => {
+const SettlementFormModal = ({ isOpen, onClose, groupId, currentMembers, onSuccess, settlementToEdit, prefilledData }) => {
   const [payerId, setPayerId] = useState('');
   const [receiverId, setReceiverId] = useState('');
   const [amount, setAmount] = useState('');
@@ -20,6 +20,12 @@ const SettlementFormModal = ({ isOpen, onClose, groupId, currentMembers, onSucce
         setAmount(settlementToEdit.amount.toString());
         setSettlementDate(new Date(settlementToEdit.settlementDate).toISOString().split('T')[0]);
         setNotes(settlementToEdit.notes || '');
+      } else if (prefilledData) {
+        setPayerId(prefilledData.payerId.toString());
+        setReceiverId(prefilledData.receiverId.toString());
+        setAmount(prefilledData.amount.toString());
+        setSettlementDate(new Date().toISOString().split('T')[0]);
+        setNotes('');
       } else {
         // Default payer to current user if available
         const currentUserId = localStorage.getItem('userId');
@@ -35,7 +41,7 @@ const SettlementFormModal = ({ isOpen, onClose, groupId, currentMembers, onSucce
       }
       setError(null);
     }
-  }, [isOpen, settlementToEdit, currentMembers]);
+  }, [isOpen, settlementToEdit, prefilledData, currentMembers]);
 
   if (!isOpen) return null;
 

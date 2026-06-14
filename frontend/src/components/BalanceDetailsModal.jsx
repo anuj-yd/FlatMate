@@ -10,6 +10,9 @@ const BalanceDetailsModal = ({ isOpen, onClose, groupId, userId, onSettlementAdd
   // For the Settle Up button in the repayment list
   const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
   const [settlementData, setSettlementData] = useState(null);
+  
+  // For Reminder button
+  const [sendingReminder, setSendingReminder] = useState(false);
 
   useEffect(() => {
     if (isOpen && groupId && userId) {
@@ -44,6 +47,45 @@ const BalanceDetailsModal = ({ isOpen, onClose, groupId, userId, onSettlementAdd
     setIsSettlementModalOpen(true);
   };
 
+  const handleSendReminder = async () => {
+    if (!details || !details.repayments) return;
+    
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    // Decode JWT to get myUserId
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const myUserId = parseInt(payload.userId);
+    
+    // Calculate how much this user (details.userId) owes ME (myUserId)
+    let amountOwedToMe = 0;
+    details.repayments.forEach(r => {
+      if (r.from.userId === parseInt(userId) && r.to.userId === myUserId) {
+        amountOwedToMe += r.amount;
+      }
+    });
+
+    if (amountOwedToMe <= 0) {
+      alert(`${details.user} does not owe you any money right now!`);
+      return;
+    }
+
+    setSendingReminder(true);
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`http://localhost:3000/api/groups/${groupId}/reminders/${userId}`, 
+        { amount: amountOwedToMe },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert('Reminder sent successfully! ✅');
+    } catch (err) {
+      console.error('Failed to send reminder', err);
+      alert(err.response?.data?.error || 'Failed to send reminder. Please try again.');
+    } finally {
+      setSendingReminder(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -71,8 +113,13 @@ const BalanceDetailsModal = ({ isOpen, onClose, groupId, userId, onSettlementAdd
                 <h1>{details.user}</h1>
                 <p className="email">{details.userEmail || 'Email not available'}</p>
                 <div className="header-actions">
-                  <button className="btn-orange">Friend settings</button>
-                  <button className="btn-light-orange">Send a balance reminder</button>
+                  <button 
+                    className="btn-light-orange" 
+                    onClick={handleSendReminder}
+                    disabled={sendingReminder}
+                  >
+                    {sendingReminder ? 'Sending...' : 'Send a balance reminder'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -115,7 +162,7 @@ const BalanceDetailsModal = ({ isOpen, onClose, groupId, userId, onSettlementAdd
             if (onSettlementAdded) onSettlementAdded();
             setIsSettlementModalOpen(false);
           }}
-          settlementToEdit={settlementData}
+          prefilledData={settlementData}
         />
       )}
     </div>
