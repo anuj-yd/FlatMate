@@ -23,6 +23,10 @@ model User {
   
   groups       Group[]       @relation("UserGroups")
   groupMembers GroupMember[]
+  
+  expensesPaid Expense[] @relation("PayerUser")
+  expensesCreated Expense[] @relation("CreatorUser")
+  expenseParticipations ExpenseParticipant[]
 }
 
 model Group {
@@ -33,6 +37,7 @@ model Group {
   
   creator   User          @relation("UserGroups", fields: [createdBy], references: [id])
   members   GroupMember[]
+  expenses  Expense[]
 }
 
 model GroupMember {
@@ -44,7 +49,45 @@ model GroupMember {
 
   group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([groupId, userId])
 }
 
+enum SplitType {
+  EQUAL
+  EXACT
+  PERCENTAGE
+}
+
+model Expense {
+  id          Int       @id @default(autoincrement())
+  description String
+  amount      Float
+  currency    String
+  expenseDate DateTime  @default(now())
+  splitType   SplitType
+  notes       String?
+  
+  groupId     Int
+  group       Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  
+  payerId     Int
+  payer       User      @relation("PayerUser", fields: [payerId], references: [id])
+  
+  createdBy   Int
+  creator     User      @relation("CreatorUser", fields: [createdBy], references: [id])
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  participants ExpenseParticipant[]
+}
+
+model ExpenseParticipant {
+  id         Int      @id @default(autoincrement())
+  shareValue Float?
+  
+  expenseId  Int
+  expense    Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

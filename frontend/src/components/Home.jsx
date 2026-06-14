@@ -9,6 +9,7 @@ const Home = () => {
   const [groups, setGroups] = useState([]);
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupMembers, setNewGroupMembers] = useState(['']); // Start with one empty email field
   
   const [editingGroup, setEditingGroup] = useState(null);
   const [editGroupName, setEditGroupName] = useState('');
@@ -63,12 +64,17 @@ const Home = () => {
     e.preventDefault();
     if (!newGroupName.trim()) return;
     
+    // Filter out empty emails
+    const membersToInvite = newGroupMembers.filter(email => email.trim() !== '');
+
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:3000/api/groups', { name: newGroupName }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await axios.post('http://localhost:3000/api/groups', 
+        { name: newGroupName, membersToInvite }, 
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
       setNewGroupName('');
+      setNewGroupMembers(['']);
       setIsCreatingGroup(false);
       fetchGroups();
     } catch (error) {
@@ -154,15 +160,59 @@ const Home = () => {
             <div className="doodle-modal">
               <h2>Create a Group 🏠</h2>
               <form onSubmit={handleCreateGroup}>
-                <input 
-                  type="text" 
-                  className="doodle-input" 
-                  placeholder="E.g., Goa Trip, Flat 402" 
-                  value={newGroupName}
-                  onChange={(e) => setNewGroupName(e.target.value)}
-                  required 
-                  autoFocus
-                />
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px', color: 'var(--ink)' }}>Group Name</label>
+                  <input 
+                    type="text" 
+                    className="doodle-input" 
+                    placeholder="E.g., Goa Trip, Flat 402" 
+                    value={newGroupName}
+                    onChange={(e) => setNewGroupName(e.target.value)}
+                    required 
+                    autoFocus
+                  />
+                </div>
+
+                <div style={{ marginBottom: '25px' }}>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px', color: 'var(--ink)' }}>Group Members (Emails)</label>
+                  <p style={{ fontSize: '14px', color: '#666', marginBottom: '10px' }}>Tip: Add your friends by their registered email addresses.</p>
+                  
+                  {newGroupMembers.map((email, index) => (
+                    <div key={index} style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                      <input 
+                        type="email" 
+                        className="doodle-input" 
+                        placeholder="Email address (optional)" 
+                        value={email}
+                        onChange={(e) => {
+                          const newMembers = [...newGroupMembers];
+                          newMembers[index] = e.target.value;
+                          setNewGroupMembers(newMembers);
+                        }}
+                      />
+                      {newGroupMembers.length > 1 && (
+                        <button 
+                          type="button" 
+                          onClick={() => {
+                            const newMembers = newGroupMembers.filter((_, i) => i !== index);
+                            setNewGroupMembers(newMembers);
+                          }}
+                          style={{ background: 'transparent', border: 'none', color: 'var(--bg-red)', cursor: 'pointer', fontSize: '20px', fontWeight: 'bold' }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button 
+                    type="button" 
+                    onClick={() => setNewGroupMembers([...newGroupMembers, ''])}
+                    style={{ background: 'transparent', border: 'none', color: '#008b8b', cursor: 'pointer', fontWeight: 'bold', padding: '0', fontSize: '15px' }}
+                  >
+                    + Add a person
+                  </button>
+                </div>
+
                 <div className="modal-actions">
                   <button type="submit" className="doodle-btn-small confirm">Create</button>
                   <button type="button" className="doodle-btn-small cancel" onClick={() => setIsCreatingGroup(false)}>Cancel</button>
@@ -285,7 +335,7 @@ const Home = () => {
                 </div>
                 <p>Created on {new Date(g.createdAt).toLocaleDateString()}</p>
                 <p className="members-count">{g.members?.length || 1} Member(s)</p>
-                <button className="doodle-btn-small">Open Group</button>
+                <button className="doodle-btn-small" onClick={() => navigate(`/group/${g.id}`)}>Open Group</button>
               </div>
             ))}
           </div>
