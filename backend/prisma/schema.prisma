@@ -20,5 +20,31 @@ model User {
   otp       String?
   otpExpiry DateTime?
   createdAt DateTime  @default(now())
+  
+  groups       Group[]       @relation("UserGroups")
+  groupMembers GroupMember[]
+}
+
+model Group {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdBy Int
+  createdAt DateTime @default(now())
+  
+  creator   User          @relation("UserGroups", fields: [createdBy], references: [id])
+  members   GroupMember[]
+}
+
+model GroupMember {
+  id        Int       @id @default(autoincrement())
+  groupId   Int
+  userId    Int
+  joinedAt  DateTime  @default(now())
+  leftAt    DateTime?
+
+  group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
 }
 

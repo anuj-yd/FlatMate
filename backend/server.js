@@ -231,6 +231,149 @@ app.post('/api/reset-password', async (req, res) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+// Create Group API
+app.post('/api/groups', authenticateToken, async (req, res) => {
+    try {
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ error: 'Group name is required' });
+
+        const group = await prisma.group.create({
+            data: {
+                name,
+                createdBy: req.user.userId,
+                members: {
+                    create: { userId: req.user.userId }
+                }
+            }
+        });
+        res.status(201).json(group);
+    } catch (error) {
+        console.error('Create group error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Get User's Groups API
+app.get('/api/groups', authenticateToken, async (req, res) => {
+    try {
+        const groups = await prisma.group.findMany({
+            where: { 
+                OR: [
+                    { createdBy: req.user.userId },
+                    { members: { some: { userId: req.user.userId } } }
+                ]
+            },
+            include: { members: true }
+        });
+        res.status(200).json(groups);
+    } catch (error) {
+        console.error('Fetch groups error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Get specific group
+app.get('/api/groups/:id', authenticateToken, async (req, res) => {
+    try {
+        const groupId = parseInt(req.params.id);
+        const group = await prisma.group.findUnique({
+            where: { id: groupId },
+            include: { members: true }
+        });
+        
+        if (!group) return res.status(404).json({ error: 'Group not found' });
+        
+        // Ensure user is member or creator
+        const isMember = group.members.some(m => m.userId === req.user.userId);
+        if (group.createdBy !== req.user.userId && !isMember) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
+        res.json(group);
+    } catch (error) {
+        console.error('Fetch specific group error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Add Member to Group API
+app.post('/api/groups/:id/members', authenticateToken, async (req, res) => {
+    try {
+        const groupId = parseInt(req.params.id);
+        const { email } = req.body;
+        
+        if (!email) return res.status(400).json({ error: 'Email is required' });
+
+        const group = await prisma.group.findUnique({ where: { id: groupId } });
+        if (!group) return res.status(404).json({ error: 'Group not found' });
+        if (group.createdBy !== req.user.userId) return res.status(403).json({ error: 'Only creator can add members' });
+
+        const targetUser = await prisma.user.findUnique({ where: { email } });
+        if (!targetUser) return res.status(404).json({ error: 'User not found with this email' });
+
+        // Check if already a member
+        const existingMember = await prisma.groupMember.findUnique({
+            where: {
+                groupId_userId: {
+                    groupId,
+                    userId: targetUser.id
+                }
+            }
+        });
+        
+        if (existingMember) return res.status(400).json({ error: 'User is already a member of this group' });
+
+        const member = await prisma.groupMember.create({
+            data: {
+                groupId,
+                userId: targetUser.id
+            }
+        });
+        
+        res.status(201).json(member);
+    } catch (error) {
+        console.error('Add member error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Update group
+app.put('/api/groups/:id', authenticateToken, async (req, res) => {
+    try {
+        const groupId = parseInt(req.params.id);
+        const { name } = req.body;
+        
+        const group = await prisma.group.findUnique({ where: { id: groupId } });
+        if (!group) return res.status(404).json({ error: 'Group not found' });
+        if (group.createdBy !== req.user.userId) return res.status(403).json({ error: 'Only creator can edit' });
+
+        const updated = await prisma.group.update({
+            where: { id: groupId },
+            data: { name }
+        });
+        res.json(updated);
+    } catch (error) {
+        console.error('Update group error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Delete group
+app.delete('/api/groups/:id', authenticateToken, async (req, res) => {
+    try {
+        const groupId = parseInt(req.params.id);
+        
+        const group = await prisma.group.findUnique({ where: { id: groupId } });
+        if (!group) return res.status(404).json({ error: 'Group not found' });
+        if (group.createdBy !== req.user.userId) return res.status(403).json({ error: 'Only creator can delete' });
+
+        await prisma.group.delete({ where: { id: groupId } });
+        res.json({ message: 'Group deleted successfully' });
+    } catch (error) {
+        console.error('Delete group error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 
 app.listen(3000, () => {
     console.log('Server started on port 3000');
