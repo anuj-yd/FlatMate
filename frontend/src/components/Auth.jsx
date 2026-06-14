@@ -10,6 +10,13 @@ const Auth = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+
+  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -19,6 +26,32 @@ const Auth = () => {
       navigate('/');
     } catch (err) {
       alert(err.response?.data?.error || 'Login failed');
+    }
+  };
+
+  const handleSendOtp = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post('http://localhost:3000/api/forgot-password', { email });
+      alert('OTP sent to your email!');
+      setOtpSent(true);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to send OTP');
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post('http://localhost:3000/api/reset-password', { email, otp, newPassword });
+      alert('Password reset successfully! Please login.');
+      setIsForgotPassword(false);
+      setOtpSent(false);
+      setOtp('');
+      setNewPassword('');
+      setPassword('');
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to reset password');
     }
   };
 
@@ -67,7 +100,10 @@ const Auth = () => {
                       <input className="doodle-input" value={email} onChange={(e) => setEmail(e.target.value)} name="email" placeholder="Email" type="email" required />
                     </div>
                     <div className="doodle-input-wrapper">
-                      <input className="doodle-input" value={password} onChange={(e) => setPassword(e.target.value)} name="password" placeholder="Password" type="password" required />
+                      <input className="doodle-input" value={password} onChange={(e) => setPassword(e.target.value)} name="password" placeholder="Password" type={showLoginPassword ? 'text' : 'password'} required style={{ paddingRight: '60px' }} />
+                      <button type="button" className="password-toggle-btn" onClick={() => setShowLoginPassword(!showLoginPassword)}>
+                        {showLoginPassword ? 'Hide' : 'Show'}
+                      </button>
                     </div>
                     <button className="doodle-btn" type="submit">Let's Go!</button>
                     <button type="button" className="doodle-link" onClick={() => setIsForgotPassword(true)}>Forgot Password?</button>
@@ -76,13 +112,26 @@ const Auth = () => {
               ) : (
                 <>
                   <div className="doodle-title" style={{ fontSize: '20px' }}>Reset Password</div>
-                  <form className="doodle-form" onSubmit={(e) => e.preventDefault()}>
-                    <div className="doodle-input-wrapper">
-                      <input className="doodle-input" name="email" placeholder="Email Address" type="email" required />
-                    </div>
-                    <button className="doodle-btn" type="submit">Send Link</button>
-                    <button type="button" className="doodle-link" onClick={() => setIsForgotPassword(false)}>Back to Login</button>
-                  </form>
+                  {!otpSent ? (
+                    <form className="doodle-form" onSubmit={handleSendOtp}>
+                      <div className="doodle-input-wrapper">
+                        <input className="doodle-input" value={email} onChange={(e) => setEmail(e.target.value)} name="email" placeholder="Email Address" type="email" required />
+                      </div>
+                      <button className="doodle-btn" type="submit">Send OTP</button>
+                      <button type="button" className="doodle-link" onClick={() => setIsForgotPassword(false)}>Back to Login</button>
+                    </form>
+                  ) : (
+                    <form className="doodle-form" onSubmit={handleResetPassword}>
+                      <div className="doodle-input-wrapper">
+                        <input className="doodle-input" value={otp} onChange={(e) => setOtp(e.target.value)} name="otp" placeholder="6-digit OTP" type="text" required />
+                      </div>
+                      <div className="doodle-input-wrapper">
+                        <input className="doodle-input" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} name="newPassword" placeholder="New Password" type="password" required />
+                      </div>
+                      <button className="doodle-btn" type="submit">Reset</button>
+                      <button type="button" className="doodle-link" onClick={() => {setOtpSent(false); setIsForgotPassword(false);}}>Cancel</button>
+                    </form>
+                  )}
                 </>
               )}
             </div>
@@ -96,7 +145,10 @@ const Auth = () => {
                   <input className="doodle-input" value={email} onChange={(e) => setEmail(e.target.value)} name="email" placeholder="Email" type="email" required />
                 </div>
                 <div className="doodle-input-wrapper">
-                  <input className="doodle-input" value={password} onChange={(e) => setPassword(e.target.value)} name="password" placeholder="Password" type="password" required />
+                  <input className="doodle-input" value={password} onChange={(e) => setPassword(e.target.value)} name="password" placeholder="Password" type={showRegisterPassword ? 'text' : 'password'} required style={{ paddingRight: '60px' }} />
+                  <button type="button" className="password-toggle-btn" onClick={() => setShowRegisterPassword(!showRegisterPassword)}>
+                    {showRegisterPassword ? 'Hide' : 'Show'}
+                  </button>
                 </div>
                 <button className="doodle-btn doodle-btn-alt" type="submit">Confirm!</button>
               </form>
@@ -448,9 +500,7 @@ const StyledWrapper = styled.div`
     font-family: inherit;
     font-size: 16px;
     font-weight: 600;
-    text-decoration: underline;
-    text-decoration-style: wavy;
-    text-decoration-color: #ff6b6b;
+    text-decoration: none;
     cursor: pointer;
     padding: 5px;
     margin-top: -5px;
@@ -481,6 +531,26 @@ const StyledWrapper = styled.div`
     75% {
       transform: rotate(1deg);
     }
-  }`;
+  }
+
+  .password-toggle-btn {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: bold;
+    color: var(--ink);
+    opacity: 0.7;
+    font-size: 14px;
+    outline: none;
+  }
+  .password-toggle-btn:hover {
+    opacity: 1;
+  }
+`;
 
 export default Auth;

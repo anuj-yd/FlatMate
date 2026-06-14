@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
 const authenticateToken = require('./middleware/auth');
 const { Pool } = require('pg');
 const { PrismaPg } = require('@prisma/adapter-pg');
@@ -127,6 +128,88 @@ app.get('/api/me', authenticateToken, async (req, res) => {
         res.json({ user: userWithoutPassword });
     } catch (error) {
         console.error('Protected route error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Mail Transporter
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+});
+
+// Forgot Password API
+app.post('/api/forgot-password', async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            return res.status(400).json({ error: 'Email is required' });
+        }
+
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user) {
+            return res.status(404).json({ error: 'User with this email not found' });
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
+        const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+        await prisma.user.update({
+            where: { email },
+            data: { otp, otpExpiry }
+        });
+
+        const mailOptions = {
+            from: `"FlateMate Support" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: 'Password Reset OTP - FlateMate',
+            text: `Your OTP for password reset is ${otp}. It will expire in 10 minutes.`
+        };
+
+        await transporter.sendMail(mailOptions);
+        res.status(200).json({ message: 'OTP sent successfully' });
+
+    } catch (error) {
+        console.error('Forgot password error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Reset Password API
+app.post('/api/reset-password', async (req, res) => {
+    try {
+        const { email, otp, newPassword } = req.body;
+        if (!email || !otp || !newPassword) {
+            return res.status(400).json({ error: 'All fields are required' });
+        }
+
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user || user.otp !== otp) {
+            return res.status(400).json({ error: 'Invalid OTP' });
+        }
+
+        if (new Date() > user.otpExpiry) {
+            return res.status(400).json({ error: 'OTP has expired' });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        await prisma.user.update({
+            where: { email },
+            data: {
+                password: hashedPassword,
+                otp: null,
+                otpExpiry: null
+            }
+        });
+
+        res.status(200).json({ message: 'Password reset successfully' });
+
+    } catch (error) {
+        console.error('Reset password error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
