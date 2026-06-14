@@ -47,3 +47,24 @@ To start the Vite development server:
 ```bash
 npm run dev
 ```
+
+### 4. Troubleshooting
+
+**Prisma Client Initialization Error (Prisma v7.x)**
+If you encounter a `PrismaClientInitializationError` asking for a non-empty `PrismaClientOptions` or saying `Cannot find module './generated/prisma'`, it is likely due to how Prisma 7 handles connections and client generation:
+
+1. **JavaScript Output:** Make sure your `schema.prisma` generator uses `provider = "prisma-client-js"` instead of just `"prisma-client"` so it correctly generates the `index.js` runtime files.
+2. **Database Adapters:** Prisma 7 no longer supports using the `url` string directly inside `schema.prisma` for the client connection. You must use database adapters. For PostgreSQL, install the required packages:
+   ```bash
+   npm install pg @prisma/adapter-pg
+   ```
+   And initialize your Prisma client in your code like this:
+   ```javascript
+   const { Pool } = require('pg');
+   const { PrismaPg } = require('@prisma/adapter-pg');
+   const { PrismaClient } = require('./generated/prisma');
+
+   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+   const adapter = new PrismaPg(pool);
+   const prisma = new PrismaClient({ adapter });
+   ```
