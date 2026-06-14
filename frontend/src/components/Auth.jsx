@@ -196,9 +196,19 @@ const StyledWrapper = styled.div`
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    position: relative;
+    position: absolute;
+    top: 0;
+    left: 0;
+    margin: 0;
     box-sizing: border-box;
     padding: 40px;
+    min-height: 100vh;
+    width: 100vw;
+    background-color: #ffffff;
+    background-image: radial-gradient(rgba(12, 12, 12, 0.171) 2px, transparent 0);
+    background-size: 30px 30px;
+    background-position: -5px -5px;
+    overflow-x: hidden;
   }
 
   /* Hide Checkbox Visually but keep accessible */
