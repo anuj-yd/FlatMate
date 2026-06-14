@@ -113,12 +113,7 @@ const BalanceDetailsModal = ({ isOpen, onClose, groupId, userId, onSettlementAdd
                 <h1>{details.user}</h1>
                 <p className="email">{details.userEmail || 'Email not available'}</p>
                 <div className="header-actions">
-                  <button 
-                    className="btn-light-orange" 
-                    onClick={() => alert('Friend settings coming soon!')}
-                  >
-                    Friend settings
-                  </button>
+
                   <button 
                     className="btn-light-orange" 
                     onClick={handleSendReminder}

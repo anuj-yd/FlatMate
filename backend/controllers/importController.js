@@ -240,9 +240,19 @@ const processImportSession = async (req, res) => {
     if (!fs.existsSync(tempPath)) return res.status(404).json({ error: 'Session not found' });
 
     let groupMembers = [];
+    let existingGuests = [];
     if (groupId) {
-      const group = await prisma.group.findUnique({ where: { id: parseInt(groupId) }, include: { members: { include: { user: true } } } });
-      if (group) groupMembers = group.members;
+      const group = await prisma.group.findUnique({ 
+        where: { id: parseInt(groupId) }, 
+        include: { 
+          members: { include: { user: true } },
+          guests: true
+        } 
+      });
+      if (group) {
+        groupMembers = group.members;
+        existingGuests = group.guests || [];
+      }
     }
     
     const canonicalMembers = groupMembers.map(m => ({ id: m.userId, name: m.user.name }));
@@ -392,7 +402,7 @@ const processImportSession = async (req, res) => {
       if (!currency || currency === '' || currency === 'NAN') {
         currency = 'INR';
         row.currency = currency;
-        issues.push({ rowId, type: 'MISSING_CURRENCY_DEFAULT', tier: 2, message: `Row ${rowId}: Defaulted missing currency to INR`, rowData: row });
+        issues.push({ id: `issue_${rowId}_${issues.length}`, rowId, type: 'MISSING_CURRENCY_DEFAULT', tier: 2, message: `Row ${rowId}: Defaulted missing currency to INR`, rowData: row });
       }
 
       // ====== TIER 3 & 4: BULK & INDIVIDUAL REVIEW ======
@@ -402,26 +412,27 @@ const processImportSession = async (req, res) => {
       if (paidBy) {
         const exact = groupMembers.find(m => m.user.name === paidBy);
         if (!exact) {
-          issues.push({ rowId, type: 'UNKNOWN_MEMBER_NAME', tier: 3, message: `Row ${rowId}: Unknown payer name "${paidBy}"`, rowData: row });
+          issues.push({ id: `issue_${rowId}_UNKNOWN_MEMBER_NAME`, rowId, type: 'UNKNOWN_MEMBER_NAME', tier: 3, message: `Row ${rowId}: Unknown payer name "${paidBy}"`, rowData: row });
           hasTier3or4 = true;
         }
       }
 
       // A09: FOREIGN_CURRENCY
       if (currency === 'USD') {
-        issues.push({ rowId, type: 'FOREIGN_CURRENCY', tier: 3, message: `Row ${rowId}: Foreign currency (USD) needs an exchange rate`, rowData: row });
+        issues.push({ id: `issue_${rowId}_FOREIGN_CURRENCY`, rowId, type: 'FOREIGN_CURRENCY', tier: 3, message: `Row ${rowId}: Foreign currency (USD) needs an exchange rate`, rowData: row });
         hasTier3or4 = true;
       }
 
       // A10: MISSING_PAYER
       if (!paidBy || paidBy === '' || paidBy === 'NAN') {
-        issues.push({ rowId, type: 'MISSING_PAYER', tier: 4, message: `Row ${rowId}: Missing payer`, rowData: row });
+        issues.push({ id: `issue_${rowId}_MISSING_PAYER`, rowId, type: 'MISSING_PAYER', tier: 4, message: `Row ${rowId}: Missing payer`, rowData: row });
         hasTier3or4 = true;
       }
 
       // A11 & A21: SETTLEMENT_AS_EXPENSE / DEPOSIT_AS_EXPENSE
       if (desc.toLowerCase().includes('settlement') || notes.includes('settlement') || notes.includes('paid back') || desc.toLowerCase().includes('deposit') || notes.includes('deposit')) {
-        issues.push({ rowId, type: desc.toLowerCase().includes('deposit') ? 'DEPOSIT_AS_EXPENSE' : 'SETTLEMENT_AS_EXPENSE', tier: 4, message: `Row ${rowId}: This looks like a direct payment/deposit, not a shared expense.`, rowData: row });
+        const tType = desc.toLowerCase().includes('deposit') ? 'DEPOSIT_AS_EXPENSE' : 'SETTLEMENT_AS_EXPENSE';
+        issues.push({ id: `issue_${rowId}_${tType}`, rowId, type: tType, tier: 4, message: `Row ${rowId}: This looks like a direct payment/deposit, not a shared expense.`, rowData: row });
         hasTier3or4 = true;
       }
 
@@ -434,7 +445,7 @@ const processImportSession = async (req, res) => {
           if (match) sum += parseInt(match[0]);
         }
         if (sum !== 100) {
-          issues.push({ rowId, type: 'PERCENTAGE_NOT_100', tier: 4, message: `Row ${rowId}: Percentages sum to ${sum}%, not 100%`, rowData: row });
+          issues.push({ id: `issue_${rowId}_PERCENTAGE_NOT_100`, rowId, type: 'PERCENTAGE_NOT_100', tier: 4, message: `Row ${rowId}: Percentages sum to ${sum}%, not 100%`, rowData: row });
           hasTier3or4 = true;
         }
       }
@@ -442,29 +453,60 @@ const processImportSession = async (req, res) => {
       // A14: GUEST_IN_SPLIT
       if (splitWith) {
         const participants = splitWith.split(';');
-        const guests = [];
+        const newParticipants = [];
+        const unknownPeople = [];
+        
         for (let p of participants) {
           p = p.trim();
-          if (!groupMembers.find(m => m.user.name === p)) {
-            guests.push(p);
+          
+          // Apply Tier 0 mappings
+          const normResult = normaliseName(p, canonicalMembers);
+          if (normResult.status === 'exact') {
+            p = normResult.resolvedName;
+          } else if (resolutionMap[p]) {
+            p = resolutionMap[p];
+          }
+          
+          newParticipants.push(p);
+
+          // Check if they are a valid member OR a valid guest
+          const isMember = groupMembers.find(m => m.user.name === p);
+          const isGuest = existingGuests.find(g => g.name === p);
+
+          if (!isMember && !isGuest) {
+            unknownPeople.push(p);
+          } else if (isGuest) {
+            // It's a known guest. We can't keep guests in split_with because ExpenseParticipant needs a User ID.
+            // So we flag them to be removed or handled.
+            unknownPeople.push(p); 
           }
         }
-        if (guests.length > 0 && !desc.toLowerCase().includes('guest')) {
-          // Prevent overlap with A08
-          issues.push({ rowId, type: 'GUEST_IN_SPLIT', tier: 4, message: `Row ${rowId}: Unknown participants in split: ${guests.join(', ')}`, rowData: row });
+        
+        row.split_with = newParticipants.join(';');
+
+        if (unknownPeople.length > 0 && !desc.toLowerCase().includes('guest')) {
+          issues.push({ 
+            id: `issue_${rowId}_GUEST_IN_SPLIT`, 
+            rowId, 
+            type: 'GUEST_IN_SPLIT', 
+            tier: 4, 
+            message: `Row ${rowId}: Guest/Unknown participant in split: ${unknownPeople.join(', ')}`, 
+            rowData: row,
+            unknownNames: unknownPeople
+          });
           hasTier3or4 = true;
         }
       }
 
       // A17: NEGATIVE_AMOUNT
       if (amount < 0) {
-        issues.push({ rowId, type: 'NEGATIVE_AMOUNT', tier: 4, message: `Row ${rowId}: Negative amount. Is this a refund?`, rowData: row });
+        issues.push({ id: `issue_${rowId}_NEGATIVE_AMOUNT`, rowId, type: 'NEGATIVE_AMOUNT', tier: 4, message: `Row ${rowId}: Negative amount. Is this a refund?`, rowData: row });
         hasTier3or4 = true;
       }
 
       // A18: ZERO_AMOUNT
       if (amount === 0) {
-        issues.push({ rowId, type: 'ZERO_AMOUNT', tier: 4, message: `Row ${rowId}: Amount is 0. Provide actual amount or skip.`, rowData: row });
+        issues.push({ id: `issue_${rowId}_ZERO_AMOUNT`, rowId, type: 'ZERO_AMOUNT', tier: 4, message: `Row ${rowId}: Amount is 0. Provide actual amount or skip.`, rowData: row });
         hasTier3or4 = true;
       }
 
@@ -479,6 +521,7 @@ const processImportSession = async (req, res) => {
             const interp1 = `${String(d).padStart(2,'0')}-${String(m).padStart(2,'0')}-${parts[2]}`; // DD-MM (standard)
             const interp2 = `${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}-${parts[2]}`; // if it was MM-DD
             issues.push({
+              id: `issue_${rowId}_AMBIGUOUS_DATE`,
               rowId, type: 'AMBIGUOUS_DATE', tier: 4,
               message: `Row ${rowId}: Date "${date}" is ambiguous — is it ${d} ${new Date(2026, m-1, 1).toLocaleString('en',{month:'short'})} or ${m} ${new Date(2026, d-1, 1).toLocaleString('en',{month:'short'})}?`,
               rowData: row, interp1, interp2
@@ -498,11 +541,11 @@ const processImportSession = async (req, res) => {
             let isTimeTraveler = false;
 
             // Standard DB validation (Relies on Database state)
-            if (member.joinedAt > parsedDate) isTimeTraveler = true;
             if (member.leftAt && member.leftAt < parsedDate) isTimeTraveler = true;
             
             if (isTimeTraveler) {
               issues.push({
+                id: `issue_${rowId}_MEMBER_AFTER_LEAVE_${p.replace(/\s+/g,'_')}`,
                 rowId, type: 'MEMBER_AFTER_LEAVE', tier: 4,
                 message: `Row ${rowId}: ${p} was not in the group on ${parsedDate.toDateString()}`,
                 rowData: row,
@@ -516,12 +559,13 @@ const processImportSession = async (req, res) => {
 
       // Duplicate Detection (A15 EXACT & A16 CONFLICTING)
       const dupCandidates = rows.filter(r => r.date === date && r.split_with === splitWith);
+      let dupCount = 0;
       for (const dup of dupCandidates) {
         if (dup.paid_by === paidBy && dup.amount === amount) {
-          issues.push({ rowId, type: 'EXACT_DUPLICATE', tier: 4, message: `Row ${rowId} is an EXACT duplicate of Row ${dup.rowId}`, rowData: row, pairId: dup.rowId, pairRowData: dup });
+          issues.push({ id: `issue_${rowId}_EXACT_DUPLICATE_${dupCount++}`, rowId, type: 'EXACT_DUPLICATE', tier: 4, message: `Row ${rowId} is an EXACT duplicate of Row ${dup.rowId}`, rowData: row, pairId: dup.rowId, pairRowData: dup });
           hasTier3or4 = true;
         } else if (getLevenshteinDistance((dup.description || '').toLowerCase(), desc.toLowerCase()) <= 5) {
-          issues.push({ rowId, type: 'CONFLICTING_DUPLICATE', tier: 4, message: `Row ${rowId} conflicts with Row ${dup.rowId} (different amount/payer)`, rowData: row, pairId: dup.rowId, pairRowData: dup });
+          issues.push({ id: `issue_${rowId}_CONFLICTING_DUPLICATE_${dupCount++}`, rowId, type: 'CONFLICTING_DUPLICATE', tier: 4, message: `Row ${rowId} conflicts with Row ${dup.rowId} (different amount/payer)`, rowData: row, pairId: dup.rowId, pairRowData: dup });
           hasTier3or4 = true;
         }
       }

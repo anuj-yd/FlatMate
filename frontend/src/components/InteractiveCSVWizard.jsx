@@ -14,9 +14,10 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
   
   // States for resolutions
   const [resolvedIssues, setResolvedIssues] = useState({});
-  const [undoToast, setUndoToast] = useState(null); // { count, rowIds }
-  const [undoedTier2Rows, setUndoedTier2Rows] = useState(new Set());
+  const [tier2Currency, setTier2Currency] = useState('INR');
+  const [tier2State, setTier2State] = useState('default'); // 'default', 'editing', 'dismissed'
   const [showAutoFixes, setShowAutoFixes] = useState(false);
+  const [showResolved, setShowResolved] = useState(false);
 
   // Bulk Mappings
   const [nameMappings, setNameMappings] = useState({});
@@ -28,9 +29,10 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
     setResolvedIssues({});
     setNameMappings({});
     setExchangeRate('83.0');
-    setUndoToast(null);
-    setUndoedTier2Rows(new Set());
+    setTier2Currency('INR');
+    setTier2State('default');
     setShowAutoFixes(false);
+    setShowResolved(false);
     setIsImporting(false);
   };
 
@@ -44,13 +46,6 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
-      // Handle Tier 2 (A07) toast — show with Undo button
-      const tier2 = response.data.issues.filter(i => i.tier === 2);
-      if (tier2.length > 0) {
-        const tier2RowIds = tier2.map(i => i.rowId);
-        setUndoToast({ count: tier2.length, rowIds: tier2RowIds });
-      }
-
       setWizardData(response.data);
       setUploading(false);
     } catch (err) {
@@ -94,21 +89,44 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
     onClose();
   };
 
-  const handleResolve = (rowId, action, customData = null) => {
-    setResolvedIssues(prev => ({ ...prev, [rowId]: { action, customData } }));
+  const handleResolve = (issueId, action, customData = null) => {
+    setResolvedIssues(prev => {
+      const updates = { ...prev, [issueId]: { action, customData } };
+
+      // Bulk resolve ambiguous dates if one is resolved
+      if (action === 'SET_DATE') {
+        const isDDMM = customData.split('-')[0].length === 2 && parseInt(customData.split('-')[0]) > 12 === false; 
+        wizardData.issues.forEach(i => {
+          if (i.id !== issueId && i.type === 'AMBIGUOUS_DATE' && !prev[i.id]) {
+            updates[i.id] = { action: 'SET_DATE', customData: isDDMM ? i.interp1 : i.interp2 };
+          }
+        });
+      }
+
+      // Bulk resolve guest assignments
+      if (action === 'ASSIGN_GUEST_SHARE') {
+        const { guests, assignedTo } = customData;
+        wizardData.issues.forEach(i => {
+          if (i.id !== issueId && i.type === 'GUEST_IN_SPLIT' && !prev[i.id]) {
+            const isSameGuests = JSON.stringify(i.unknownNames) === JSON.stringify(guests);
+            if (isSameGuests) {
+              updates[i.id] = { action: 'ASSIGN_GUEST_SHARE', customData };
+            }
+          }
+        });
+      }
+
+      return updates;
+    });
   };
 
-  const handleUndoTier2 = () => {
-    if (!undoToast) return;
-    setUndoedTier2Rows(new Set(undoToast.rowIds));
-    setUndoToast(null);
-  };
+
 
   const importToDatabase = async () => {
     if (!wizardData || !groupId) return;
     
     // Check if Tier 4 are resolved
-    const unresolved = wizardData.issues.filter(i => i.tier === 4 && !resolvedIssues[i.rowId]);
+    const unresolved = wizardData.issues.filter(i => i.tier === 4 && !resolvedIssues[i.id]);
     if (unresolved.length > 0) {
       setError(`Please resolve all ${unresolved.length} flagged issues before importing.`);
       return;
@@ -117,14 +135,23 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
     setIsImporting(true);
     setError(null);
     
-    // Exclude rows the user undid from Tier 2 defaulting
-    const finalExpenses = wizardData.validRows.filter(r => !undoedTier2Rows.has(r.rowId));
+    // Apply Tier 2 currency overrides
+    let validRowsMutable = wizardData.validRows.map(r => {
+      // Apply tier 2 changes
+      if (!r.currency || r.currency === '') {
+        return { ...r, currency: tier2Currency };
+      }
+      return r;
+    });
+
+    const finalExpenses = [];
     const finalSettlements = [];
+    const rowsToDiscard = new Set();
 
     // Apply resolutions
     wizardData.issues.forEach(issue => {
       if (issue.tier < 3) return;
-      const resolution = resolvedIssues[issue.rowId];
+      const resolution = resolvedIssues[issue.id];
       if (!resolution) return;
 
       let row = { ...issue.rowData };
@@ -140,9 +167,12 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
       switch (resolution.action) {
         case 'APPROVE':
         case 'KEEP_AS_EXPENSE':
-        case 'KEEP_THIS':
         case 'CONFIRM_REFUND':
           finalExpenses.push(row);
+          break;
+        case 'KEEP_THIS':
+          finalExpenses.push(row);
+          rowsToDiscard.add(issue.pairId);
           break;
         case 'SET_PAYER':
           row.paid_by = resolution.customData;
@@ -164,9 +194,8 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
           finalSettlements.push(row);
           break;
         case 'KEEP_PAIR': {
-          // Keep both this row AND paired row
+          // pairRowData is naturally handled by validRows or its own issue resolution
           finalExpenses.push(row);
-          if (issue.pairRowData) finalExpenses.push({ ...issue.pairRowData });
           break;
         }
         case 'REMOVE_FROM_SPLIT': {
@@ -177,14 +206,73 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
           finalExpenses.push(row);
           break;
         }
+        case 'ASSIGN_GUEST_SHARE': {
+          const { guests, assignedTo } = resolution.customData;
+          const participants = (row.split_with || '').split(';').map(s => s.trim()).filter(s => s);
+          const newSplitWith = participants.filter(p => !guests.includes(p));
+          
+          if (!newSplitWith.includes(assignedTo)) {
+            newSplitWith.push(assignedTo);
+          }
+          row.split_with = newSplitWith.join(';');
+
+          if (row.split_details) {
+            const parts = row.split_details.split(';');
+            let guestSum = 0;
+            const newDetails = [];
+            let assigneeAmount = 0;
+
+            for (const part of parts) {
+              const matchName = part.match(/([A-Za-z\s]+)/);
+              const matchVal = part.match(/(\d+(\.\d+)?)/);
+              if (matchName && matchVal) {
+                const name = matchName[1].trim();
+                const val = parseFloat(matchVal[1]);
+                if (guests.includes(name)) {
+                  guestSum += val;
+                } else if (name === assignedTo) {
+                  assigneeAmount += val;
+                } else {
+                  newDetails.push(`${name}: ${val}`);
+                }
+              }
+            }
+            newDetails.push(`${assignedTo}: ${assigneeAmount + guestSum}`);
+            row.split_details = newDetails.join(';');
+          } else {
+            const numOriginal = participants.length;
+            const shareAmount = parseFloat(row.amount) / numOriginal;
+            let assigneeShares = 1; // if assignee was in original split
+            if (!participants.includes(assignedTo)) assigneeShares = 0; // if assigned to someone not originally in split
+            assigneeShares += guests.length; // plus the guests' shares
+
+            const newDetails = [];
+            for (const p of newSplitWith) {
+              if (p === assignedTo) {
+                 newDetails.push(`${p}: ${shareAmount * assigneeShares}`);
+              } else {
+                 newDetails.push(`${p}: ${shareAmount}`);
+              }
+            }
+            row.split_type = 'EXACT';
+            row.split_details = newDetails.join(';');
+          }
+
+          finalExpenses.push(row);
+          break;
+        }
         // DELETE / SKIP: do nothing
       }
     });
 
+    const filteredValidRows = validRowsMutable.filter(r => !rowsToDiscard.has(r.rowId));
+    const filteredFinalExpenses = finalExpenses.filter(r => !rowsToDiscard.has(r.rowId));
+    const combinedExpenses = [...filteredValidRows, ...filteredFinalExpenses];
+
     try {
       const token = localStorage.getItem('token');
       await axios.post(`http://localhost:3000/api/groups/${groupId}/expenses/bulk`, {
-        expenses: finalExpenses,
+        expenses: combinedExpenses,
         settlements: finalSettlements
       }, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -202,11 +290,12 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
   const groupMembers = wizardData?.groupMembersList || [];
 
   const renderIssueCard = (issue) => {
-    const isResolved = !!resolvedIssues[issue.rowId];
-    const resolution = resolvedIssues[issue.rowId];
+    const isResolved = !!resolvedIssues[issue.id];
+    const resolution = resolvedIssues[issue.id];
     const r = issue.rowData;
 
     if (isResolved) {
+      if (!showResolved) return null;
       const actionLabels = {
         'APPROVE': 'Approved as-is', 'KEEP_AS_EXPENSE': 'Kept as Expense',
         'CONVERT_SETTLEMENT': 'Reclassified as Settlement', 'DELETE': 'Skipped / Deleted',
@@ -217,9 +306,10 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
         'CONFIRM_REFUND': 'Confirmed as Refund',
         'KEEP_THIS': 'Kept this row only', 'KEEP_PAIR': 'Kept both rows',
         'REMOVE_FROM_SPLIT': `Removed "${resolution.customData}" from split`,
+        'ASSIGN_GUEST_SHARE': resolution.customData?.assignedTo ? `Assigned guest's share to ${resolution.customData.assignedTo}` : 'Assigned guest share',
       };
       return (
-        <div key={issue.rowId} className="issue-card resolved">
+        <div key={issue.id} className="issue-card resolved">
           <div className="resolved-header">
             <span className="resolved-check">✅</span>
             <strong>Row {issue.rowId}</strong>
@@ -227,7 +317,7 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
           </div>
           <div className="resolved-status">
             {actionLabels[resolution.action] || resolution.action}
-            <button className="btn-undo" onClick={() => handleResolve(issue.rowId, null)}>Undo</button>
+            <button className="btn-undo" onClick={() => handleResolve(issue.id, null)}>Undo</button>
           </div>
         </div>
       );
@@ -251,12 +341,12 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
               <p className="action-hint">Who paid for this expense?</p>
               <div className="payer-grid">
                 {groupMembers.map(m => (
-                  <button key={m.id} className="member-chip" onClick={() => handleResolve(issue.rowId, 'SET_PAYER', m.name)}>
+                  <button key={m.id} className="member-chip" onClick={() => handleResolve(issue.id, 'SET_PAYER', m.name)}>
                     {m.name}
                   </button>
                 ))}
               </div>
-              <button className="btn-delete" onClick={() => handleResolve(issue.rowId, 'DELETE')}>Skip this expense</button>
+              <button className="btn-delete" onClick={() => handleResolve(issue.id, 'DELETE')}>Skip this expense</button>
             </div>
           );
 
@@ -266,9 +356,9 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
             <div className="action-group">
               <p className="action-hint">{issue.type === 'DEPOSIT_AS_EXPENSE' ? 'This looks like a deposit, not a shared expense.' : 'This looks like a direct payment/settlement.'}</p>
               <div className="btn-row">
-                <button className="btn-convert" onClick={() => handleResolve(issue.rowId, 'CONVERT_SETTLEMENT')}>Reclassify as Settlement</button>
-                <button className="btn-approve" onClick={() => handleResolve(issue.rowId, 'KEEP_AS_EXPENSE')}>Keep as Expense</button>
-                <button className="btn-delete" onClick={() => handleResolve(issue.rowId, 'DELETE')}>Skip Row</button>
+                <button className="btn-convert" onClick={() => handleResolve(issue.id, 'CONVERT_SETTLEMENT')}>Reclassify as Settlement</button>
+                <button className="btn-approve" onClick={() => handleResolve(issue.id, 'KEEP_AS_EXPENSE')}>Keep as Expense</button>
+                <button className="btn-delete" onClick={() => handleResolve(issue.id, 'DELETE')}>Skip Row</button>
               </div>
             </div>
           );
@@ -283,14 +373,14 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
               <div className="btn-row">
                 <button
                   className="btn-remove-member"
-                  onClick={() => handleResolve(issue.rowId, 'REMOVE_FROM_SPLIT', offender)}
+                  onClick={() => handleResolve(issue.id, 'REMOVE_FROM_SPLIT', offender)}
                 >
                   ✂️ Remove {offender} from this split
                 </button>
-                <button className="btn-approve" onClick={() => handleResolve(issue.rowId, 'APPROVE')}>
+                <button className="btn-approve" onClick={() => handleResolve(issue.id, 'APPROVE')}>
                   Keep anyway
                 </button>
-                <button className="btn-delete" onClick={() => handleResolve(issue.rowId, 'DELETE')}>
+                <button className="btn-delete" onClick={() => handleResolve(issue.id, 'DELETE')}>
                   Skip expense
                 </button>
               </div>
@@ -298,16 +388,47 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
           );
         }
 
-        case 'GUEST_IN_SPLIT':
+        case 'GUEST_IN_SPLIT': {
+          const names = issue.unknownNames ? issue.unknownNames.join(', ') : 'Guest(s) / Unknown person(s)';
           return (
             <div className="action-group">
-              <p className="action-hint">Unrecognised person(s) in split_with. They must be resolved before import.</p>
-              <div className="btn-row">
-                <button className="btn-approve" onClick={() => handleResolve(issue.rowId, 'APPROVE')}>Import without unknown participants</button>
-                <button className="btn-delete" onClick={() => handleResolve(issue.rowId, 'DELETE')}>Skip this expense</button>
+              <p className="action-hint">
+                <strong>{names}</strong> is a Guest (or unknown). Guests cannot have direct financial balances in the system.
+              </p>
+              
+              <div style={{ background: '#f8f9fa', padding: '12px', borderRadius: '8px', marginBottom: '10px' }}>
+                <p style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 'bold', color: '#444' }}>Option 1: Assign guest's share to someone</p>
+                <div className="input-row">
+                  <select 
+                    className="fix-input" 
+                    onChange={(e) => {
+                      if(e.target.value) {
+                        handleResolve(issue.id, 'ASSIGN_GUEST_SHARE', { guests: issue.unknownNames, assignedTo: e.target.value });
+                      }
+                    }}
+                    defaultValue=""
+                  >
+                    <option value="" disabled>-- Select member --</option>
+                    {groupMembers.map(m => (
+                      <option key={m.id} value={m.name}>{m.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
+
+              <div style={{ background: '#f8f9fa', padding: '12px', borderRadius: '8px', marginBottom: '10px' }}>
+                <p style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 'bold', color: '#444' }}>Option 2: Divide guest's share equally among rest</p>
+                <button className="btn-approve" onClick={() => handleResolve(issue.id, 'APPROVE')}>
+                  ✂️ Remove Guest & Divide share
+                </button>
+              </div>
+
+              <button className="btn-delete" onClick={() => handleResolve(issue.id, 'DELETE')}>
+                Skip this expense entirely
+              </button>
             </div>
           );
+        }
 
         case 'EXACT_DUPLICATE':
           return (
@@ -318,9 +439,9 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
                 {issue.pairRowData && <div className="dup-row pair"><strong>Row {issue.pairId}:</strong> {issue.pairRowData.description} | ₹{issue.pairRowData.amount} | Paid by {issue.pairRowData.paid_by}</div>}
               </div>
               <div className="btn-row">
-                <button className="btn-approve" onClick={() => handleResolve(issue.rowId, 'KEEP_THIS')}>Keep only this row</button>
-                <button className="btn-secondary" onClick={() => handleResolve(issue.rowId, 'KEEP_PAIR')}>Keep both (split payment)</button>
-                <button className="btn-delete" onClick={() => handleResolve(issue.rowId, 'DELETE')}>Skip this row</button>
+                <button className="btn-approve" onClick={() => handleResolve(issue.id, 'KEEP_THIS')}>Keep only this row</button>
+                <button className="btn-secondary" onClick={() => handleResolve(issue.id, 'KEEP_PAIR')}>Keep both (split payment)</button>
+                <button className="btn-delete" onClick={() => handleResolve(issue.id, 'DELETE')}>Skip this row</button>
               </div>
             </div>
           );
@@ -334,9 +455,9 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
                 {issue.pairRowData && <div className="dup-row pair"><strong>Row {issue.pairId}:</strong> {issue.pairRowData.description} | ₹{issue.pairRowData.amount} | Paid by {issue.pairRowData.paid_by}</div>}
               </div>
               <div className="btn-row">
-                <button className="btn-approve" onClick={() => handleResolve(issue.rowId, 'KEEP_THIS')}>This row is correct</button>
-                <button className="btn-secondary" onClick={() => handleResolve(issue.rowId, 'KEEP_PAIR')}>Keep both</button>
-                <button className="btn-delete" onClick={() => handleResolve(issue.rowId, 'DELETE')}>Skip this row</button>
+                <button className="btn-approve" onClick={() => handleResolve(issue.id, 'KEEP_THIS')}>This row is correct</button>
+                <button className="btn-secondary" onClick={() => handleResolve(issue.id, 'KEEP_PAIR')}>Keep both</button>
+                <button className="btn-delete" onClick={() => handleResolve(issue.id, 'DELETE')}>Skip this row</button>
               </div>
             </div>
           );
@@ -351,10 +472,10 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
                   type="text"
                   placeholder="e.g. Aisha 30; Rohan 40; Priya 30"
                   defaultValue={currentPct}
-                  onBlur={(e) => e.target.value && handleResolve(issue.rowId, 'FIX_PERCENTAGE', e.target.value)}
+                  onBlur={(e) => e.target.value && handleResolve(issue.id, 'FIX_PERCENTAGE', e.target.value)}
                   className="fix-input"
                 />
-                <button className="btn-delete" onClick={() => handleResolve(issue.rowId, 'DELETE')}>Skip Row</button>
+                <button className="btn-delete" onClick={() => handleResolve(issue.id, 'DELETE')}>Skip Row</button>
               </div>
             </div>
           );
@@ -368,10 +489,10 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
                 <input
                   type="number"
                   placeholder="Enter correct amount"
-                  onBlur={(e) => e.target.value && handleResolve(issue.rowId, 'FIX_AMOUNT', e.target.value)}
+                  onBlur={(e) => e.target.value && handleResolve(issue.id, 'FIX_AMOUNT', e.target.value)}
                   className="fix-input"
                 />
-                <button className="btn-delete" onClick={() => handleResolve(issue.rowId, 'DELETE')}>Skip Row</button>
+                <button className="btn-delete" onClick={() => handleResolve(issue.id, 'DELETE')}>Skip Row</button>
               </div>
             </div>
           );
@@ -381,8 +502,8 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
             <div className="action-group">
               <p className="action-hint">Amount is negative (₹{r.amount}). Could be a refund or data error.</p>
               <div className="btn-row">
-                <button className="btn-approve" onClick={() => handleResolve(issue.rowId, 'CONFIRM_REFUND')}>Confirm — it's a refund</button>
-                <button className="btn-delete" onClick={() => handleResolve(issue.rowId, 'DELETE')}>Skip Row</button>
+                <button className="btn-approve" onClick={() => handleResolve(issue.id, 'CONFIRM_REFUND')}>Confirm — it's a refund</button>
+                <button className="btn-delete" onClick={() => handleResolve(issue.id, 'DELETE')}>Skip Row</button>
               </div>
             </div>
           );
@@ -392,13 +513,13 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
             <div className="action-group">
               <p className="action-hint">Date <code>{r.date}</code> is ambiguous. Pick the correct interpretation:</p>
               <div className="btn-row">
-                <button className="btn-date" onClick={() => handleResolve(issue.rowId, 'SET_DATE', issue.interp1)}>
+                <button className="btn-date" onClick={() => handleResolve(issue.id, 'SET_DATE', issue.interp1)}>
                   📅 {issue.interp1} (DD-MM, standard)
                 </button>
-                <button className="btn-date" onClick={() => handleResolve(issue.rowId, 'SET_DATE', issue.interp2)}>
+                <button className="btn-date" onClick={() => handleResolve(issue.id, 'SET_DATE', issue.interp2)}>
                   📅 {issue.interp2} (MM-DD interpretation)
                 </button>
-                <button className="btn-delete" onClick={() => handleResolve(issue.rowId, 'DELETE')}>Skip Row</button>
+                <button className="btn-delete" onClick={() => handleResolve(issue.id, 'DELETE')}>Skip Row</button>
               </div>
             </div>
           );
@@ -406,15 +527,15 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
         default:
           return (
             <div className="btn-row">
-              <button className="btn-approve" onClick={() => handleResolve(issue.rowId, 'APPROVE')}>Approve</button>
-              <button className="btn-delete" onClick={() => handleResolve(issue.rowId, 'DELETE')}>Skip Row</button>
+              <button className="btn-approve" onClick={() => handleResolve(issue.id, 'APPROVE')}>Approve</button>
+              <button className="btn-delete" onClick={() => handleResolve(issue.id, 'DELETE')}>Skip Row</button>
             </div>
           );
       }
     };
 
     return (
-      <div key={issue.rowId} className="issue-card">
+      <div key={issue.id} className="issue-card">
         <div className="issue-header">
           <span className="issue-badge" style={{ background: badgeColor }}>{issue.type.replace(/_/g,' ')}</span>
           <strong>Row {issue.rowId}</strong>
@@ -439,16 +560,6 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
         
         <h1 className="page-title">CSV Anomaly Engine (4-Tier)</h1>
         <p className="page-subtitle">Automatically detecting inconsistent formats, duplicates, and timeline errors exactly as specified.</p>
-
-        {undoToast && (
-          <div className="undo-toast">
-            <span>⚠️ <strong>{undoToast.count} row{undoToast.count > 1 ? 's' : ''}</strong> had missing currency — defaulted to <strong>INR</strong>.</span>
-            <div className="toast-actions">
-              <button className="toast-undo-btn" onClick={handleUndoTier2}>Undo</button>
-              <button className="toast-dismiss-btn" onClick={() => setUndoToast(null)}>✕</button>
-            </div>
-          </div>
-        )}
 
         {error && <div className="error-alert">{error}</div>}
 
@@ -480,7 +591,7 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
               </div>
               <div className="status-item">
                 <span className="label">Issues to Resolve</span>
-                <span className="value" style={{color: '#e74c3c'}}>{wizardData.issues.filter(i => i.tier >= 3).length}</span>
+                <span className="value" style={{color: '#e74c3c'}}>{wizardData.issues.filter(i => i.tier >= 3 && !resolvedIssues[i.id]).length}</span>
               </div>
             </div>
 
@@ -520,6 +631,39 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
                 </div>
               )}
 
+              {wizardData.issues.filter(i => i.tier === 2).length > 0 && tier2State !== 'dismissed' && (
+                <div className="dark-banner">
+                  <div className="dark-banner-left">
+                    <span style={{color: '#f39c12', fontSize: '16px'}}>⚠️</span>
+                    <span>
+                      <strong>{wizardData.issues.filter(i => i.tier === 2).length} row{wizardData.issues.filter(i => i.tier === 2).length > 1 ? 's' : ''}</strong> had missing currency — defaulted to <strong>{tier2Currency}</strong>.
+                    </span>
+                  </div>
+                  <div className="dark-banner-actions">
+                    {tier2State === 'default' ? (
+                      <button className="btn-solid-orange" onClick={() => setTier2State('editing')}>Undo</button>
+                    ) : (
+                      <>
+                        <select 
+                          className="dark-select" 
+                          value={tier2Currency} 
+                          onChange={(e) => setTier2Currency(e.target.value)}
+                        >
+                          <option value="INR">INR</option>
+                          <option value="USD">USD</option>
+                          <option value="EUR">EUR</option>
+                          <option value="GBP">GBP</option>
+                          <option value="AUD">AUD</option>
+                          <option value="CAD">CAD</option>
+                        </select>
+                        <button className="btn-solid-green" onClick={() => setTier2State('default')}>Save</button>
+                      </>
+                    )}
+                    <button className="btn-close-dark" onClick={() => setTier2State('dismissed')}>✕</button>
+                  </div>
+                </div>
+              )}
+
               {wizardData.issues.filter(i => i.tier === 3).length > 0 && (
                 <div className="bulk-section">
                   <h3>Tier 3: Bulk Review Required</h3>
@@ -532,17 +676,21 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
 
               {wizardData.issues.filter(i => i.tier === 4).length > 0 && (
                 <div className="issues-section">
-                  <h3>Tier 4: Individual Review Required</h3>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3>Tier 4: Individual Review Required</h3>
+                    <label style={{ fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={showResolved} 
+                        onChange={(e) => setShowResolved(e.target.checked)} 
+                        style={{ cursor: 'pointer' }}
+                      />
+                      Show resolved issues
+                    </label>
+                  </div>
                   <div className="issues-list">
                     {wizardData.issues.filter(i => i.tier === 4).map(renderIssueCard)}
                   </div>
-                </div>
-              )}
-
-              {undoedTier2Rows.size > 0 && (
-                <div className="undoed-rows-warning">
-                  ⚠️ <strong>{undoedTier2Rows.size} row{undoedTier2Rows.size > 1 ? 's' : ''}</strong> excluded from import (currency was missing — you chose Undo).
-                  <button onClick={() => setUndoedTier2Rows(new Set())} className="redo-btn">Re-include with INR</button>
                 </div>
               )}
 
@@ -551,9 +699,9 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
                 <button
                   className="btn-import"
                   onClick={importToDatabase}
-                  disabled={isImporting || wizardData.issues.filter(i => i.tier === 4 && !resolvedIssues[i.rowId]).length > 0}
+                  disabled={isImporting || wizardData.issues.filter(i => i.tier === 4 && !resolvedIssues[i.id]).length > 0}
                 >
-                  {isImporting ? 'Processing...' : `Import ${wizardData.validRows.filter(r => !undoedTier2Rows.has(r.rowId)).length} rows`}
+                  {isImporting ? 'Processing...' : `Import ${wizardData.validRows.length} rows`}
                 </button>
               </div>
             </div>
@@ -572,23 +720,44 @@ const ModalOverlay = styled.div`
   .page-title { margin-bottom: 5px; }
   .page-subtitle { color: #666; margin-bottom: 20px; }
   .error-alert { background: #ffeaea; color: red; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: bold; }
-  .undo-toast {
-    background: #1a1a2e; color: white; padding: 14px 20px; border-radius: 10px;
-    margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;
-    border-left: 4px solid #f39c12; animation: slideIn 0.3s ease;
+  
+  /* Dark Banner UI for Tier 2 */
+  .dark-banner {
+    background: #1a1a24;
+    color: #e2e8f0;
+    padding: 12px 20px;
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+    border-left: 4px solid #f59e0b;
+    font-size: 14px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   }
-  @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
-  .toast-actions { display: flex; gap: 8px; flex-shrink: 0; margin-left: 16px; }
-  .toast-undo-btn { background: #f39c12; color: white; border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-weight: bold; font-size: 13px; transition: background 0.2s; }
-  .toast-undo-btn:hover { background: #e67e22; }
-  .toast-dismiss-btn { background: transparent; color: #aaa; border: 1px solid #444; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 13px; }
-  .toast-dismiss-btn:hover { color: white; border-color: #888; }
-  .undoed-rows-warning {
-    background: #fff3cd; border: 1px solid #ffc107; color: #856404;
-    padding: 12px 16px; border-radius: 8px; margin-bottom: 16px;
-    display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px;
+  .dark-banner-left { display: flex; align-items: center; gap: 12px; }
+  .dark-banner-actions { display: flex; align-items: center; gap: 10px; }
+  .btn-solid-orange {
+    background: #f59e0b; color: white; border: none; padding: 6px 16px;
+    border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s;
   }
-  .redo-btn { background: #ffc107; border: none; border-radius: 5px; padding: 5px 12px; cursor: pointer; font-weight: bold; font-size: 12px; white-space: nowrap; }
+  .btn-solid-orange:hover { background: #d97706; }
+  .btn-solid-green {
+    background: #10b981; color: white; border: none; padding: 6px 16px;
+    border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s;
+  }
+  .btn-solid-green:hover { background: #059669; }
+  .btn-close-dark {
+    background: transparent; color: #64748b; border: 1px solid #334155;
+    border-radius: 6px; padding: 5px 10px; cursor: pointer; display: flex; align-items: center;
+  }
+  .btn-close-dark:hover { color: #f8fafc; border-color: #64748b; }
+  .dark-select {
+    background: #334155; color: white; border: 1px solid #475569;
+    padding: 6px 12px; border-radius: 6px; outline: none; font-weight: 500; cursor: pointer;
+  }
+  .dark-select:focus { border-color: #3b82f6; }
+
   .drop-zone { background: #fdfdf5; padding: 80px; text-align: center; border: 2px dashed #ddd; border-radius: 16px; cursor: pointer; }
   .status-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 30px; }
   .status-item { background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #eee; }
