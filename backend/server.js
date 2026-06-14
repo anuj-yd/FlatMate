@@ -166,7 +166,25 @@ app.post('/api/forgot-password', async (req, res) => {
             from: `"FlateMate Support" <${process.env.EMAIL_USER}>`,
             to: email,
             subject: 'Password Reset OTP - FlateMate',
-            text: `Your OTP for password reset is ${otp}. It will expire in 10 minutes.`
+            html: `
+            <div style="font-family: 'Comic Sans MS', 'Chalkboard SE', sans-serif; background-color: #ffffff; padding: 40px 20px; text-align: center;">
+              <div style="max-width: 500px; margin: 0 auto; background-color: #fff9e6; border: 3px solid #323232; border-radius: 15px; padding: 40px 30px; box-shadow: 5px 5px 0px #323232;">
+                <h1 style="color: #ff6b6b; font-size: 32px; margin-bottom: 10px; margin-top: 0;">FlateMate ✨</h1>
+                <h2 style="color: #323232; font-size: 22px; margin-top: 0;">Password Reset Request</h2>
+                <p style="color: #555; font-size: 16px; line-height: 1.6; margin-bottom: 30px;">
+                  Hey there! We received a request to reset your password. Here is your magic code:
+                </p>
+                <div style="margin: 40px 0;">
+                  <span style="background-color: #ffe66d; border: 3px solid #323232; padding: 15px 30px; font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #323232; border-radius: 12px; box-shadow: 4px 4px 0px #323232;">
+                    ${otp}
+                  </span>
+                </div>
+                <p style="color: #555; font-size: 14px; margin-top: 40px;">
+                  This code will expire in <strong>10 minutes</strong>.<br>If you didn't request this, you can safely ignore this email.
+                </p>
+              </div>
+            </div>
+            `
         };
 
         await transporter.sendMail(mailOptions);
