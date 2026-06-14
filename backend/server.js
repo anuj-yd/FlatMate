@@ -10,7 +10,7 @@ const { getGroupBalances, getUserBalance } = require('./controllers/balanceContr
 const { uploadCsvExpenses } = require('./controllers/csvController');
 const { createSettlement, getSettlements, getSettlementById, updateSettlement, deleteSettlement } = require('./controllers/settlementController');
 const { getActivityFeed } = require('./controllers/activityController');
-const { uploadCsvPreview } = require('./controllers/importController');
+const { initImportSession, getImportMembers, resolveImportMembers, uploadCsvPreview } = require('./controllers/importController');
 const { sendReminderEmail } = require('./controllers/reminderController');
 const authenticateToken = require('./middleware/auth');
 const prisma = require('./prismaClient');
@@ -486,9 +486,23 @@ app.post('/api/groups/:groupId/expenses', authenticateToken, async (req, res) =>
         const isUserMember = group.members.some(m => m.userId === req.user.userId && !m.leftAt);
         if (!isUserMember && group.createdBy !== req.user.userId) return res.status(403).json({ error: 'Access denied' });
 
-        // Verify payer is an active member
-        const isPayerActive = group.members.some(m => m.userId === payerId && !m.leftAt);
-        if (!isPayerActive) return res.status(400).json({ error: 'Payer must be an active member' });
+        const dateToCheck = expenseDate ? new Date(expenseDate) : new Date();
+
+        // Validate payer membership dates
+        const payerMember = group.members.find(m => m.userId === payerId);
+        if (!payerMember) return res.status(400).json({ error: 'Payer must be a group member' });
+        if (payerMember.joinedAt > dateToCheck || (payerMember.leftAt && payerMember.leftAt < dateToCheck)) {
+            return res.status(400).json({ error: 'Payer was not in the group on the given expense date' });
+        }
+
+        // Validate participants membership dates
+        for (const p of participants) {
+            const member = group.members.find(m => m.userId === p.userId);
+            if (!member) return res.status(400).json({ error: `Participant ${p.userId} is not a member` });
+            if (member.joinedAt > dateToCheck || (member.leftAt && member.leftAt < dateToCheck)) {
+                return res.status(400).json({ error: `Participant was not in the group on the given expense date` });
+            }
+        }
 
         // Validate Split
         let totalVal = 0;
@@ -535,6 +549,119 @@ app.post('/api/groups/:groupId/expenses', authenticateToken, async (req, res) =>
     } catch (error) {
         console.error('Create expense error:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// 1.5 Bulk Create Expenses (From CSV Wizard)
+app.post('/api/groups/:groupId/expenses/bulk', authenticateToken, async (req, res) => {
+    try {
+        const groupId = parseInt(req.params.groupId);
+        const { expenses, settlements } = req.body;
+
+        const group = await prisma.group.findUnique({ where: { id: groupId }, include: { members: { include: { user: true } } } });
+        if (!group) return res.status(404).json({ error: 'Group not found' });
+
+        await prisma.$transaction(async (tx) => {
+            // Process expenses
+            for (const row of expenses) {
+                const amountStr = String(row.Amount || row.amount || '').replace(/[^0-9.-]+/g, "");
+                const amount = Math.abs(parseFloat(amountStr));
+                const currency = row.Currency || row.currency || 'INR';
+                const desc = row.Description || row.description || 'Imported Expense';
+                const dateRaw = row.Date || row.date;
+                let date = new Date();
+                if (dateRaw) {
+                    if (typeof dateRaw === 'string' && /^\d{2}-\d{2}-\d{4}$/.test(dateRaw)) {
+                        const parts = dateRaw.split('-');
+                        date = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+                    } else {
+                        date = new Date(dateRaw);
+                    }
+                    if (isNaN(date.getTime())) date = new Date();
+                }
+
+                let payerName = row.paid_by || row.Payer || '';
+                let payerMember = group.members.find(m => m.user.name.toLowerCase() === payerName.toLowerCase().trim());
+                if (!payerMember) payerMember = group.members[0];
+
+                let splitTypeEnum = row.split_type ? row.split_type.toUpperCase() : 'EQUAL';
+                if (splitTypeEnum === 'UNEQUAL') splitTypeEnum = 'EXACT';
+                if (splitTypeEnum === 'SHARE') splitTypeEnum = 'EXACT'; // Will convert shares to exact amounts
+
+                const exp = await tx.expense.create({
+                    data: {
+                        description: desc, amount, currency, expenseDate: date,
+                        splitType: splitTypeEnum, groupId, payerId: payerMember.userId, createdBy: req.user.userId
+                    }
+                });
+
+                const participantData = [];
+                const participantsStr = row.split_with || '';
+                const detailsStr = row.split_details || '';
+
+                const participantsList = participantsStr.split(';').map(p => p.trim()).filter(p => p !== '');
+                const detailMap = {};
+
+                let sumOfShares = 0;
+                if (detailsStr) {
+                    const parts = detailsStr.split(';');
+                    for (const p of parts) {
+                        const matchName = p.match(/([A-Za-z\s]+)/);
+                        const matchVal = p.match(/(\d+(\.\d+)?)/);
+                        if (matchName && matchVal) {
+                            const val = parseFloat(matchVal[1]);
+                            detailMap[matchName[1].trim().toLowerCase()] = val;
+                            sumOfShares += val;
+                        }
+                    }
+                }
+
+                const isShareConversion = row.split_type?.toLowerCase() === 'share';
+
+                for (const pName of participantsList) {
+                    const member = group.members.find(m => m.user.name.toLowerCase() === pName.toLowerCase());
+                    if (member) {
+                        let val = detailMap[pName.toLowerCase()] || null;
+                        if (val !== null && isShareConversion && sumOfShares > 0) {
+                            val = (val / sumOfShares) * amount; // Convert share to exact amount
+                        }
+                        participantData.push({ expenseId: exp.id, userId: member.userId, shareValue: val });
+                    }
+                }
+
+                if (participantData.length === 0) {
+                    group.members.forEach(m => participantData.push({ expenseId: exp.id, userId: m.userId, shareValue: null }));
+                }
+
+                await tx.expenseParticipant.createMany({ data: participantData });
+            }
+
+            // Process settlements
+            for (const row of settlements) {
+                const amountStr = String(row.Amount || row.amount || '').replace(/[^0-9.-]+/g, "");
+                const amount = Math.abs(parseFloat(amountStr));
+                
+                let payerName = row.paid_by || row.Payer || '';
+                let payerMember = group.members.find(m => m.user.name.toLowerCase() === payerName.toLowerCase().trim());
+                if (!payerMember) payerMember = group.members[0];
+
+                let receiverName = row.split_with || '';
+                let receiverMember = group.members.find(m => m.user.name.toLowerCase() === receiverName.toLowerCase().trim());
+                if (!receiverMember) receiverMember = group.members.find(m => m.userId !== payerMember.userId);
+                if (!receiverMember) receiverMember = group.members[0];
+
+                await tx.settlement.create({
+                    data: {
+                        amount, groupId, payerId: payerMember.userId, receiverId: receiverMember.userId, createdBy: req.user.userId
+                    }
+                });
+            }
+        });
+
+        res.status(201).json({ message: 'Bulk import successful' });
+    } catch (error) {
+        console.error('Bulk import error:', error);
+        res.status(500).json({ error: 'Internal server error during bulk import' });
     }
 });
 
@@ -705,8 +832,15 @@ app.delete('/api/settlements/:settlementId', authenticateToken, deleteSettlement
 app.get('/api/activity', authenticateToken, getActivityFeed);
 
 // 10. Imports API (Preview)
-app.post('/api/imports/upload', authenticateToken, upload.single('file'), uploadCsvPreview);
+// Import flows
+app.post('/api/groups/:groupId/imports/init', authenticateToken, upload.single('file'), initImportSession);
+app.get('/api/groups/:groupId/imports/:sessionId/members', authenticateToken, getImportMembers);
+app.post('/api/groups/:groupId/imports/:sessionId/member-resolutions', authenticateToken, resolveImportMembers);
+
+app.post('/api/groups/:groupId/imports/preview', authenticateToken, upload.single('file'), uploadCsvPreview);
 
 app.listen(3000, () => {
     console.log('Server started on port 3000');
 });
+
+// Trigger nodemon restart

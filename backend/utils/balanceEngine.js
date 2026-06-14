@@ -3,13 +3,18 @@
  * Pure functions to calculate balances and breakdowns.
  */
 
+const EXCHANGE_RATE_USD_INR = 83.0;
+
 /**
  * Helper to calculate how much a specific participant owes for a given expense.
  */
 function calculateOwedAmount(expense, participant) {
   if (!participant) return 0;
   
-  const amount = parseFloat(expense.amount);
+  let amount = parseFloat(expense.amount);
+  if (expense.currency === 'USD') {
+    amount *= EXCHANGE_RATE_USD_INR;
+  }
   
   if (expense.splitType === 'EQUAL') {
     const participantCount = expense.participants.length;
@@ -46,7 +51,10 @@ function calculateGroupBalances(expenses, settlements = [], members) {
 
   // Process all expenses
   expenses.forEach(expense => {
-    const amount = parseFloat(expense.amount);
+    let amount = parseFloat(expense.amount);
+    if (expense.currency === 'USD') {
+      amount *= EXCHANGE_RATE_USD_INR;
+    }
     
     // Add to totalPaid for the payer
     if (balances[expense.payerId]) {
@@ -100,13 +108,18 @@ function calculateUserBreakdown(expenses, settlements = [], userId) {
   let totalPaid = 0;
   let totalOwed = 0;
   const breakdown = [];
+  const parsedUserId = userId;
 
   expenses.forEach(expense => {
-    const isPayer = expense.payerId === userId;
-    const participant = expense.participants.find(p => p.userId === userId);
-    
+    let amount = parseFloat(expense.amount);
+    if (expense.currency === 'USD') {
+      amount *= EXCHANGE_RATE_USD_INR;
+    }
+
+    const isPayer = expense.payerId === parsedUserId;
+    const participant = expense.participants.find(p => p.userId === parsedUserId);
+
     if (isPayer || participant) {
-      const amount = parseFloat(expense.amount);
       let userShare = 0;
       let impact = 0;
 
@@ -126,6 +139,7 @@ function calculateUserBreakdown(expenses, settlements = [], userId) {
         expenseId: expense.id,
         description: expense.description,
         amount: amount,
+        currency: 'INR',
         payer: expense.payer ? expense.payer.name : 'Unknown',
         userShare: Number(userShare.toFixed(2)),
         impact: Number(impact.toFixed(2)),

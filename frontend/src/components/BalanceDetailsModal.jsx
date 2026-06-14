@@ -115,6 +115,12 @@ const BalanceDetailsModal = ({ isOpen, onClose, groupId, userId, onSettlementAdd
                 <div className="header-actions">
                   <button 
                     className="btn-light-orange" 
+                    onClick={() => alert('Friend settings coming soon!')}
+                  >
+                    Friend settings
+                  </button>
+                  <button 
+                    className="btn-light-orange" 
                     onClick={handleSendReminder}
                     disabled={sendingReminder}
                   >
@@ -229,34 +235,19 @@ const ModalContainer = styled.div`
     }
   }
 
-  .header-actions {
-    display: flex;
-    gap: 10px;
-
-    button {
-      padding: 6px 14px;
-      border: 1px solid transparent;
-      border-radius: 4px;
-      font-size: 13px;
-      cursor: pointer;
-      font-weight: 500;
-      transition: all 0.2s;
-    }
-
-    .btn-orange {
-      background-color: #ff652f;
-      color: white;
-      border-color: #e55b2a;
-      &:hover { background-color: #e55b2a; }
-    }
-
-    .btn-light-orange {
-      background-color: #ffa07a;
-      color: white;
-      border-color: #e5906e;
-      &:hover { background-color: #e5906e; }
-    }
+  .header-actions { display: flex; gap: 10px; margin-top: 10px; }
+  .btn-light-orange {
+    background-color: #ff7b54;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.2s;
   }
+  .btn-light-orange:hover { background-color: #e66a46; }
+  .btn-light-orange:disabled { opacity: 0.6; cursor: not-allowed; }
 
   .divider {
     border: 0;
@@ -306,16 +297,17 @@ const ModalContainer = styled.div`
       }
 
       .btn-settle {
-        background-color: #5bc5a7;
+        background-color: #55c6a1;
         color: white;
-        border: 1px solid #52b196;
+        border: none;
+        padding: 6px 16px;
         border-radius: 4px;
-        padding: 5px 15px;
+        font-weight: normal;
         font-size: 14px;
         cursor: pointer;
-        font-weight: 500;
-        &:hover { background-color: #52b196; }
+        transition: background 0.2s;
       }
+      .btn-settle:hover { background-color: #48b08e; }
     }
   }
 `;

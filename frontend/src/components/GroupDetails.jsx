@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import axios from 'axios';
 import ExpenseFormModal from './ExpenseFormModal';
-import CsvImportPreviewModal from './CsvImportPreviewModal';
+import InteractiveCSVWizard from './InteractiveCSVWizard';
+import MemberResolutionWizard from './MemberResolutionWizard';
 import BalanceDetailsModal from './BalanceDetailsModal';
 import SettlementFormModal from './SettlementFormModal';
 
@@ -24,6 +25,7 @@ const GroupDetails = () => {
   const [settlements, setSettlements] = useState([]);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
+  const [isMemberResolutionModalOpen, setIsMemberResolutionModalOpen] = useState(false);
   const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
   const [selectedUserForBalance, setSelectedUserForBalance] = useState(null);
   const [activeTab, setActiveTab] = useState('expenses'); // 'expenses' or 'settlements'
@@ -191,7 +193,7 @@ const GroupDetails = () => {
             </div>
             <div className="header-actions">
               <button className="doodle-btn-small" style={{ background: '#ff7b54', color: 'white' }} onClick={() => setIsExpenseModalOpen(true)}>Add an expense</button>
-              <button className="doodle-btn-small" style={{ background: '#5f9ea0', color: 'white' }} onClick={() => setIsCsvModalOpen(true)}>Import CSV</button>
+              <button className="doodle-btn-small" style={{ background: '#5f9ea0', color: 'white' }} onClick={() => setIsMemberResolutionModalOpen(true)}>Import CSV</button>
               <button className="doodle-btn-small" style={{ background: '#2ecc71', color: 'white' }} onClick={() => setIsSettlementModalOpen(true)}>Settle up</button>
             </div>
           </div>
@@ -352,8 +354,27 @@ const GroupDetails = () => {
                   <button className="remove-btn-mini" onClick={() => setRemovingMember(m)}>✕</button>
                 </div>
               ))}
+
             </div>
           </div>
+
+          {membersData.membershipHistory && membersData.membershipHistory.length > 0 && (
+            <div className="timeline-section" style={{ marginTop: '40px' }}>
+              <div className="section-header" style={{ color: '#999', fontSize: '14px', letterSpacing: '1px', borderBottom: 'none', marginBottom: '15px' }}>
+                <span>MEMBERSHIP TIMELINE</span>
+              </div>
+              <div className="timeline-list" style={{ borderLeft: '2px solid #eee', paddingLeft: '15px', marginLeft: '10px' }}>
+                {membersData.membershipHistory.map((m, idx) => (
+                  <div key={`${m.id}-timeline-${idx}`} className="timeline-item" style={{ fontSize: '13px', marginBottom: '15px', color: '#555', position: 'relative' }}>
+                    <div style={{ position: 'absolute', left: '-22px', top: '2px', width: '10px', height: '10px', borderRadius: '50%', background: m.leftAt ? '#ff6b6b' : '#2ecc71', border: '2px solid white' }}></div>
+                    <div style={{ fontWeight: 'bold', color: 'var(--ink)' }}>{m.user?.name}</div>
+                    <div>Joined: {new Date(m.joinedAt).toLocaleDateString()}</div>
+                    {m.leftAt && <div style={{ color: '#ff6b6b' }}>Left: {new Date(m.leftAt).toLocaleDateString()}</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
       </div>
@@ -380,7 +401,12 @@ const GroupDetails = () => {
         </div>
       )}
 
-      <CsvImportPreviewModal 
+      <MemberResolutionWizard
+        isOpen={isMemberResolutionModalOpen}
+        onClose={() => setIsMemberResolutionModalOpen(false)}
+        groupId={id}
+      />
+      <InteractiveCSVWizard 
         isOpen={isCsvModalOpen} 
         onClose={() => setIsCsvModalOpen(false)} 
         groupId={id}
