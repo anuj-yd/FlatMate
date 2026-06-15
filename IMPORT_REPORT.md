@@ -1,43 +1,43 @@
 # FlatMate CSV Import Report
 
-Jab aap file import karte hain aur saari problems solve kar dete hain, toh system ek report generate karta hai (background me). Ye ek example hai ki ek Import Report kaisi dikhti hai aur usme kya-kya hota hai. Ye humein batata hai ki file ke sath exactly kya hua.
+When you import a file and resolve all the issues, the system generates a report in the background. This is an example of what an Import Report looks like and the kind of information it contains. It tells us exactly what happened to the data in the file.
 
 ---
 
-### Import Summary (Kitna data tha)
+### Import Summary
 * **Total Rows Uploaded:** 24
 * **Rows Imported Successfully:** 21
 * **Rows Skipped / Deleted:** 3
-* **Members Added via CSV:** 2 (Ramesh aur Suresh ko account invite bheja gaya)
-* **Auto-Fixed Rows (Bina puche theek hui):** 5
-* **Manually Resolved Rows (Jo aapne theek ki):** 4
+* **Members Added via CSV:** 2 (Account invites were sent to John and Sarah)
+* **Auto-Fixed Rows (Resolved without asking):** 5
+* **Manually Resolved Rows (Resolved by you):** 4
 
 ---
 
-### Detailed Anomaly Log (Konsi problem ko kaise theek kiya gaya)
+### Detailed Anomaly Log
 
-Yahan un sabhi rows ki detail hoti hai jinme koi gadbadi (anomaly) thi, aur unhe kya action lekar theek kiya gaya:
+This section details all the rows that had an issue (anomaly) and the exact action taken to fix them:
 
-1. **Row 5 (Amount: ₹0)**
-   * **Problem:** CSV me is row ka amount 0 tha (ZERO_AMOUNT).
-   * **Action Taken:** Aapne isko **"Skip this expense entirely"** (DELETE) choose kiya, kyunki 0 rupees ka koi kharcha nahi hota. Ye row import nahi hui.
+1. **Row 5 (Amount: $0)**
+   * **Problem:** The amount for this row in the CSV was 0 (ZERO_AMOUNT).
+   * **Action Taken:** You chose to **"Skip this expense entirely"** (DELETE) because an expense of 0 dollars doesn't make sense. This row was not imported.
 
-2. **Row 8 (Dev paid Dev 500)**
-   * **Problem:** Paise split hone ki jagah settlement likha tha (SETTLEMENT_AS_EXPENSE).
-   * **Action Taken:** Ise **"Reclassified as Settlement"** (CONVERT_SETTLEMENT) kar diya gaya. Ab ye kharcha nahi, balki udhaar chukana mana jayega.
+2. **Row 8 (Dev paid Dev $500)**
+   * **Problem:** A debt repayment was listed as a shared expense (SETTLEMENT_AS_EXPENSE).
+   * **Action Taken:** It was **"Reclassified as Settlement"** (CONVERT_SETTLEMENT). It will no longer be treated as an expense, but as clearing a debt balance.
 
-3. **Row 12 (Pizza - ₹600)**
-   * **Problem:** Ye same bill pehle hi add ho chuka tha (EXACT_DUPLICATE).
-   * **Action Taken:** Aapne **"Kept this row only"** (KEEP_THIS) click kiya, jisse system ne pehli wali galti ko mita kar is nayi sahi row ko import kar liya aur double kharcha add hone se bacha liya.
+3. **Row 12 (Pizza - $60)**
+   * **Problem:** This exact same bill was already added in another row (EXACT_DUPLICATE).
+   * **Action Taken:** You clicked **"Kept this row only"** (KEEP_THIS), which prompted the system to delete the duplicate mistake and only import this correct row, preventing a double charge.
 
-4. **Row 15 (Guest 'Priya' in Split)**
-   * **Problem:** Priya ka naam bill me tha par uska account nahi tha (GUEST_IN_SPLIT).
-   * **Action Taken:** Aapne **"Make Member"** (CONVERT_GUEST_TO_MEMBER) par click karke uska email `priya@gmail.com` daala. Usko invite bhej diya gaya aur wo proper member ban gayi.
+4. **Row 15 (Guest 'Sarah' in Split)**
+   * **Problem:** Sarah was listed in the bill but didn't have a registered account (GUEST_IN_SPLIT).
+   * **Action Taken:** You clicked **"Add Guest as Member"** (CONVERT_GUEST_TO_MEMBER) and entered her email `sarah@example.com`. An invite was sent to her, and she is now a proper member of the group.
 
-5. **Row 19 (Dates: 05-06-2026)**
-   * **Problem:** Date format clear nahi tha. Ye 5 June hai ya 6 May? (AMBIGUOUS_DATE).
-   * **Action Taken:** Aapne UI me **"5 June"** select kiya, jisse date correctly set ho gayi.
+5. **Row 19 (Date: 05-06-2026)**
+   * **Problem:** The date format was unclear. Is it June 5th or May 6th? (AMBIGUOUS_DATE).
+   * **Action Taken:** You manually selected **"5 June"** in the UI, ensuring the date was saved correctly.
 
 ---
 
-*Is report ka maqsad (purpose) yeh hai ki transparency bani rahe aur aapko humesha pata ho ki aapke CSV ke data me koi bhi changing bina aapki marzi ya knowledge ke nahi hui hai.*
+*The purpose of this report is to maintain transparency. It ensures you always know that no changes were made to your CSV data without your direct consent or knowledge.*

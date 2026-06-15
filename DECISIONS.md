@@ -1,36 +1,36 @@
-# Decision Log (Humne kya faisle liye aur kyun liye?)
+# Decision Log
 
-Yeh document un sabhi zaroori decisions ka record hai jo humne FlatMate app banate waqt liye the. Humne har decision ke peeche ka logic aur options yahan likhe hain taaki future me samajhne me aasaani ho.
+This document serves as a record of the significant decisions we made while building the FlatMate app. We have documented the logic behind each decision and the alternatives we considered, so that our thought process is clear for the future.
 
 ---
 
 ### 1. CSV Import: Interactive Wizard vs. Direct Reject
 *   **Options Considered:** 
-    1. Agar CSV me koi galati ho, toh poori file reject kar do aur user ko error dikha do.
-    2. Sirf sahi data import kar lo aur galat data ko silently chhod do.
-    3. Ek Interactive Modal (Wizard) banao jo user ko ek-ek galati dikhaye aur wahin theek karne ka option de.
+    1. If the CSV has any errors, reject the entire file and show an error message.
+    2. Import only the correct data and silently ignore the rows with errors.
+    3. Build an Interactive Modal (Wizard) that highlights each error on the screen and allows the user to fix them right there.
 *   **Decision Chosen:** Option 3 (Interactive Wizard).
-*   **Kyun? (Why):** Users nahi chahte ki unhe baar-baar Excel/CSV file me jaakar choti-choti galatiyan theek karni pade. Wizard unko samne screen par hi batata hai ki "Ye naam galat hai" ya "Isme payer missing hai". Isse time bachta hai aur user experience (UX) bahut achha hota hai.
+*   **Why:** Users don't want the hassle of going back to their Excel/CSV file to fix minor typos again and again. The wizard points out exactly what's wrong (e.g., "This name is invalid" or "Payer is missing") and lets them resolve it instantly. This saves a lot of time and provides a much better User Experience (UX).
 
-### 2. Guests Handling (Naye logo ka kharcha kaise manage karein?)
+### 2. Handling Guests (How to manage expenses for non-members?)
 *   **Options Considered:** 
-    1. CSV me agar naya naam aaye, toh simply error de do.
-    2. Us naye insaan ka kharcha baaki sab logo me baant do.
-    3. Us naye insaan ko "Guest" bana do, aur wahi screen se direct email daal kar "Member" me convert karne ka feature do.
+    1. Throw an error if a new, unrecognized name appears in the CSV.
+    2. Automatically distribute the unrecognized person's share among the rest of the group.
+    3. Treat them as a "Guest", and provide an option right on the screen to convert them into a "Member" by entering their email address.
 *   **Decision Chosen:** Option 3 (Convert to Member via Modal).
-*   **Kyun? (Why):** Aksar log trip par aate hain aur unka account nahi hota. Hume chahiye tha ki user unhe on-the-spot group me add kar sake aur unhe email chala jaye. Isse humari app par naye users (growth) automatically badhenge. Aur transaction bhi rukega nahi.
+*   **Why:** People often bring guests on trips who don't have an account on the app yet. We wanted to allow users to add these guests to the group on-the-spot and send them an email invite. This naturally drives user growth for the app and ensures the expense logging process doesn't get blocked.
 
-### 3. Duplicate Prevention (Double entry rokna)
+### 3. Duplicate Prevention (Stopping double entries)
 *   **Options Considered:**
-    1. CSV me jaise rows aayein, sab import kar lo. (Duplicate entry ho jayegi).
-    2. Agar same entry mile, toh background me khud hi delete kar do. (Lekin ho sakta hai wo alag kharcha ho jo same amount ka ho).
-    3. User ko dono rows screen par dikhao aur unhe decide karne do ki "Skip" karna hai, "Keep this" karna hai, ya "Keep both" karna hai.
+    1. Import everything as-is. (This would lead to double entries).
+    2. If a matching entry is found, delete it automatically in the background. (Risky, because it might be a genuinely separate expense that just happened to have the same amount).
+    3. Show both rows to the user on the screen and let them decide whether to "Skip", "Keep this only", or "Keep both".
 *   **Decision Chosen:** Option 3.
-*   **Kyun? (Why):** Financial data ke sath hum khud guess nahi kar sakte. Ek hi din me 2 baar "Pizza - ₹500" aa sakta hai. Isliye hum Exact Duplicate pakadte zaroor hain, par faisla user ke haath me chhodte hain taaki koi bhi valid bill miss na ho jaye aur na hi koi extra bill add ho.
+*   **Why:** We cannot guess with financial data. It's entirely possible for two "Pizza - $50" bills to occur on the same day. Therefore, while we aggressively detect "Exact Duplicates", we leave the final decision to the user to ensure no valid bills are missed and no extra bills are added accidentally.
 
 ### 4. Background Processing for Emails
 *   **Options Considered:**
-    1. Jab user "Add Member" click kare, toh poore CSV import process ke khatam hone ka wait karein aur fir email bhejein.
-    2. "Add Member" popup me email enter karte hi turant background API hit karein aur email bhej dein.
+    1. When a user clicks "Add Member", wait for the entire CSV import process to finish before sending the email.
+    2. Hit the background API and send the email immediately as soon as the user enters the email and clicks "Add Member" in the popup.
 *   **Decision Chosen:** Option 2.
-*   **Kyun? (Why):** Agar koi error aana hoga (jaise "Email already exists"), toh wo turant wahin popup me dikh jayega. User ko end me 50 rows import karne ke baad error nahi aayega. Isse UI aur fast feel hoti hai. P2002 (Unique Constraint) error ko handle karne ke liye humne try-catch me graceful fallback lagaya hai taaki concurrency crash na ho.
+*   **Why:** If there's going to be an error (like "Email already exists"), it's better to show it immediately inside the popup rather than surprising the user with a failure after they've spent time resolving 50 rows. This makes the UI feel much faster and more responsive. To handle the P2002 (Unique Constraint) error, we added a graceful fallback in a try-catch block so that concurrent requests don't crash the server.
