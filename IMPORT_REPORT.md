@@ -1,43 +1,55 @@
 # FlatMate CSV Import Report
 
-When you import a file and resolve all the issues, the system generates a report in the background. This is an example of what an Import Report looks like and the kind of information it contains. It tells us exactly what happened to the data in the file.
+When a CSV is imported and processed through the 4-Tier Anomaly Engine, the system generates a definitive Import Report. This report provides a transparent audit trail of every data mutation, anomaly flagged, and resolution action taken by the user.
 
 ---
 
-### Import Summary
-* **Total Rows Uploaded:** 24
-* **Rows Imported Successfully:** 21
-* **Rows Skipped / Deleted:** 3
-* **Members Added via CSV:** 2 (Account invites were sent to John and Sarah)
-* **Auto-Fixed Rows (Resolved without asking):** 5
-* **Manually Resolved Rows (Resolved by you):** 4
+## Import Execution Summary
+
+- **Timestamp:** `2026-06-15 14:30:00 UTC`
+- **Group:** Flat 404
+- **File Processed:** `may_expenses.csv`
+- **Total Rows Scanned:** 54
+- **Rows Imported Successfully:** 50
+- **Rows Discarded / Skipped:** 4
+- **New Members Invited:** 2
+- **Anomalies Auto-Fixed:** 12
+- **Anomalies Manually Resolved:** 7
 
 ---
 
-### Detailed Anomaly Log
+## Detailed Anomaly & Resolution Log
 
-This section details all the rows that had an issue (anomaly) and the exact action taken to fix them:
+This audit log details specific data conflicts flagged by the engine and the exact resolutions applied during the import session as per the new Interactive Wizard workflow.
 
-1. **Row 5 (Amount: $0)**
-   * **Problem:** The amount for this row in the CSV was 0 (ZERO_AMOUNT).
-   * **Action Taken:** You chose to **"Skip this expense entirely"** (DELETE) because an expense of 0 dollars doesn't make sense. This row was not imported.
+### Tier 2: Unrecognized Member Resolution
+**1. Row 12 (Payer: "Aisha G.")**
+* **Anomaly Flagged:** The name "Aisha G." was not found in the group's active members or guests (`UNRECOGNIZED_NAME`).
+* **Resolution Action:** User mapped "Aisha G." to the existing registered user `Aisha Gupta`. All subsequent instances of "Aisha G." in the file were automatically mapped to this user ID.
 
-2. **Row 8 (Dev paid Dev $500)**
-   * **Problem:** A debt repayment was listed as a shared expense (SETTLEMENT_AS_EXPENSE).
-   * **Action Taken:** It was **"Reclassified as Settlement"** (CONVERT_SETTLEMENT). It will no longer be treated as an expense, but as clearing a debt balance.
+**2. Row 18 (Participant: "Rohan")**
+* **Anomaly Flagged:** "Rohan" did not exist in the system.
+* **Resolution Action:** User selected **"Create New Member"**, provided the email `rohan@example.com`, and the system dispatched an asynchronous email invite. Rohan was added to the expense split.
 
-3. **Row 12 (Pizza - $60)**
-   * **Problem:** This exact same bill was already added in another row (EXACT_DUPLICATE).
-   * **Action Taken:** You clicked **"Kept this row only"** (KEEP_THIS), which prompted the system to delete the duplicate mistake and only import this correct row, preventing a double charge.
+### Tier 3: Moderate Issues
+**3. Row 25 (Description: "Paid back for groceries", Amount: ₹1000)**
+* **Anomaly Flagged:** Keyword analysis of the description indicated this was a debt repayment, not a shared group expense (`SETTLEMENT_AS_EXPENSE`).
+* **Resolution Action:** User selected to reclassify it as a `Settlement` between the Payer and Receiver. This amount was used to clear outstanding debt balances instead of adding to the total group spend.
 
-4. **Row 15 (Guest 'Sarah' in Split)**
-   * **Problem:** Sarah was listed in the bill but didn't have a registered account (GUEST_IN_SPLIT).
-   * **Action Taken:** You clicked **"Add Guest as Member"** (CONVERT_GUEST_TO_MEMBER) and entered her email `sarah@example.com`. An invite was sent to her, and she is now a proper member of the group.
+**4. Row 29 (Payer: [BLANK], Amount: ₹450)**
+* **Anomaly Flagged:** The Payer column was missing data (`MISSING_PAYER`).
+* **Resolution Action:** User manually selected `Rahul` from the UI dropdown to attribute the expense correctly before the import could proceed.
 
-5. **Row 19 (Date: 05-06-2026)**
-   * **Problem:** The date format was unclear. Is it June 5th or May 6th? (AMBIGUOUS_DATE).
-   * **Action Taken:** You manually selected **"5 June"** in the UI, ensuring the date was saved correctly.
+### Tier 4: Critical Duplication Engine
+**5. Row 35 (Description: "Domino's Pizza", Amount: ₹800)**
+* **Anomaly Flagged:** The system detected an `EXACT_DUPLICATE`. This row perfectly matched an existing expense already in the database (Date, Amount, Description).
+* **Resolution Action:** User selected **"Skip Both"**, dropping the duplicate row and preventing a double-entry in the database.
+
+**6. Row 42 (Description: "Wifi Bill May", Amount: ₹1250)**
+* **Anomaly Flagged:** The system detected a `CONFLICTING_DUPLICATE`. Another row on the same date logged "Wifi Bill" for ₹1200. The user notes contained the phrase *"Aisha also logged this"*. The Levenshtein distance string matching and keyword parser flagged this as a highly probable conflict despite the different amounts.
+* **Resolution Action:** User selected **"Select Existing Row"**, explicitly dropping the new ₹1250 row in favor of the previously verified ₹1200 entry.
 
 ---
 
-*The purpose of this report is to maintain transparency. It ensures you always know that no changes were made to your CSV data without your direct consent or knowledge.*
+> [!NOTE]
+> **Audit Guarantee:** The FlatMate engine guarantees that no destructive or deductive changes are made to your financial data without explicit UI confirmation. All auto-fixes are strictly limited to non-destructive string normalization (whitespace trimming, case correction).

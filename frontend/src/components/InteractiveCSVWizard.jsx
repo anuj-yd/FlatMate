@@ -220,6 +220,15 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
           finalExpenses.push(row);
           break;
         }
+        case 'KEEP_PAIR_ONLY': {
+          // pairRowData is kept, but this row is skipped
+          break;
+        }
+        case 'SKIP_BOTH': {
+          // Skip this row and ensure pair is discarded
+          rowsToDiscard.add(issue.pairId);
+          break;
+        }
         case 'REMOVE_FROM_SPLIT': {
           // Remove the offending member from split_with
           const memberToRemove = resolution.customData;
@@ -481,15 +490,15 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
         case 'EXACT_DUPLICATE':
           return (
             <div className="action-group">
-              <p className="action-hint">This row is an exact duplicate of Row {issue.pairId}. Could be a double-entry.</p>
+              <p className="action-hint">This row is an exact duplicate of {issue.isDbConflict ? 'an existing expense' : `Row ${issue.pairId}`}. Could be a double-entry.</p>
               <div className="dup-compare">
                 <div className="dup-row"><strong>This row:</strong> {r.description} | ₹{r.amount} | Paid by {r.paid_by}</div>
-                {issue.pairRowData && <div className="dup-row pair"><strong>Row {issue.pairId}:</strong> {issue.pairRowData.description} | ₹{issue.pairRowData.amount} | Paid by {issue.pairRowData.paid_by}</div>}
+                {issue.pairRowData && <div className="dup-row pair"><strong>{issue.isDbConflict ? 'Existing' : `Row ${issue.pairId}`}:</strong> {issue.pairRowData.description} | ₹{issue.pairRowData.amount} | Paid by {issue.pairRowData.paid_by}</div>}
               </div>
               <div className="btn-row">
-                <button className="btn-approve" onClick={() => handleResolve(issue.id, 'KEEP_THIS')}>Keep only this row</button>
-                <button className="btn-secondary" onClick={() => handleResolve(issue.id, 'KEEP_PAIR')}>Keep both (split payment)</button>
-                <button className="btn-delete" onClick={() => handleResolve(issue.id, 'DELETE')}>Skip this row</button>
+                <button className="btn-approve" onClick={() => handleResolve(issue.id, 'KEEP_THIS')}>Keep One (This row)</button>
+                <button className="btn-secondary" onClick={() => handleResolve(issue.id, 'KEEP_PAIR')}>Keep both</button>
+                <button className="btn-delete" onClick={() => handleResolve(issue.id, 'SKIP_BOTH')}>Skip both</button>
               </div>
             </div>
           );
@@ -500,12 +509,13 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
               <p className="action-hint">Similar event, different amount or payer. Which is correct?</p>
               <div className="dup-compare">
                 <div className="dup-row"><strong>This row:</strong> {r.description} | ₹{r.amount} | Paid by {r.paid_by} | {r.date}</div>
-                {issue.pairRowData && <div className="dup-row pair"><strong>Row {issue.pairId}:</strong> {issue.pairRowData.description} | ₹{issue.pairRowData.amount} | Paid by {issue.pairRowData.paid_by}</div>}
+                {issue.pairRowData && <div className="dup-row pair"><strong>{issue.isDbConflict ? 'Existing' : `Row ${issue.pairId}`}:</strong> {issue.pairRowData.description} | ₹{issue.pairRowData.amount} | Paid by {issue.pairRowData.paid_by}</div>}
               </div>
               <div className="btn-row">
-                <button className="btn-approve" onClick={() => handleResolve(issue.id, 'KEEP_THIS')}>This row is correct</button>
+                <button className="btn-approve" onClick={() => handleResolve(issue.id, 'KEEP_THIS')}>Select This Row</button>
+                <button className="btn-approve" onClick={() => handleResolve(issue.id, 'KEEP_PAIR_ONLY')}>Select {issue.isDbConflict ? 'Existing' : `Row ${issue.pairId}`}</button>
                 <button className="btn-secondary" onClick={() => handleResolve(issue.id, 'KEEP_PAIR')}>Keep both</button>
-                <button className="btn-delete" onClick={() => handleResolve(issue.id, 'DELETE')}>Skip this row</button>
+                <button className="btn-delete" onClick={() => handleResolve(issue.id, 'SKIP_BOTH')}>Skip both</button>
               </div>
             </div>
           );

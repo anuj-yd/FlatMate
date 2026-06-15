@@ -68,3 +68,13 @@ If you encounter a `PrismaClientInitializationError` asking for a non-empty `Pri
    const adapter = new PrismaPg(pool);
    const prisma = new PrismaClient({ adapter });
    ```
+
+## AI Tools Used
+
+This project was built and developed using **Antigravity**, an advanced agentic AI coding assistant created by Google DeepMind. 
+
+### Key AI Contributions:
+- **Architectural Design:** Assisted in designing the Prisma schema (User, Group, Expense, Settlement, etc.) and structuring the Express REST API.
+- **CSV Anomaly Engine:** Developed the logic for importing and parsing CSVs, including the 4-Tier Anomaly Detection system that flags Missing Payers, Guest Accounts, and Exact/Conflicting Duplicates.
+- **Frontend Wizard UI:** Created the React-based Interactive CSV Wizard for bulk issue resolution.
+- **Deployment & Setup:** Provided guidance and debugging for deploying the backend to Render, configuring PostgreSQL (Neon/Supabase) environments, and deploying the Vite React app to Vercel.

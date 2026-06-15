@@ -591,25 +591,35 @@ const processImportSession = async (req, res) => {
 
       let dupCount = 0;
       for (const dup of dupCandidates) {
-        const isExactSplit = dup.split_with === splitWith;
-        const isExactPayerAndAmount = dup.paid_by === paidBy && dup.amount === amount;
-        
-        if (isExactPayerAndAmount && isExactSplit) {
+        // EXACT SAME PAYMENT: Same Amount, Same Description
+        // (Even if payers differ, if Amount and Desc are identical, it's considered an Exact Duplicate by the user's rules)
+        const isExactAmount = Math.abs(parseFloat(dup.amount) - parseFloat(amount)) < 0.01;
+        const isExactDesc = (dup.description || '').toLowerCase().trim() === desc.toLowerCase().trim();
+
+        if (isExactAmount && isExactDesc) {
           issues.push({ 
             id: `issue_${rowId}_EXACT_DUPLICATE_${dupCount++}`, 
             rowId, type: 'EXACT_DUPLICATE', tier: 4, 
-            message: `Row ${rowId} is an EXACT duplicate of ${dup.isDbRow ? 'an existing expense' : 'Row ' + dup.rowId}`, 
+            message: `Row ${rowId} is an EXACT match (Amount & Description) to ${dup.isDbRow ? 'an existing expense' : 'Row ' + dup.rowId}`, 
             rowData: row, pairId: dup.rowId, pairRowData: dup, isDbConflict: dup.isDbRow 
           });
           hasTier3or4 = true;
-        } else if (
-          isExactPayerAndAmount || 
-          getLevenshteinDistance((dup.description || '').toLowerCase(), desc.toLowerCase()) <= 5
-        ) {
+          continue;
+        }
+
+        // SLIGHTLY MODIFIED PAYMENT: Similar description OR keywords in notes
+        const currentNotes = (row.notes || '').toLowerCase();
+        const pairNotes = (dup.notes || '').toLowerCase();
+        const keywordMatch = /duplicate|also logged|wrong|same as|already|double/.test(currentNotes) ||
+                             /duplicate|also logged|wrong|same as|already|double/.test(pairNotes);
+
+        const isSimilarDesc = getLevenshteinDistance((dup.description || '').toLowerCase(), desc.toLowerCase()) <= 7;
+
+        if (isSimilarDesc || keywordMatch) {
           issues.push({ 
             id: `issue_${rowId}_CONFLICTING_DUPLICATE_${dupCount++}`, 
             rowId, type: 'CONFLICTING_DUPLICATE', tier: 4, 
-            message: `Row ${rowId} conflicts with ${dup.isDbRow ? 'an existing expense' : 'Row ' + dup.rowId} (different amount/payer/split)`, 
+            message: `Row ${rowId} might be the SAME payment as ${dup.isDbRow ? 'an existing expense' : 'Row ' + dup.rowId} (Different amount/payer but similar details or notes)`, 
             rowData: row, pairId: dup.rowId, pairRowData: dup, isDbConflict: dup.isDbRow 
           });
           hasTier3or4 = true;
