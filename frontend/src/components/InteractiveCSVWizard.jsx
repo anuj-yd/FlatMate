@@ -43,7 +43,7 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
 
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.post(`http://localhost:3000/api/groups/${groupId}/imports/${sessionId}/process`, {}, {
+      const response = await axios.post(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${groupId}/imports/${sessionId}/process`, {}, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
@@ -298,7 +298,7 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
     try {
       const token = localStorage.getItem('token');
       
-      await axios.post(`http://localhost:3000/api/groups/${groupId}/expenses/bulk`, {
+      await axios.post(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${groupId}/expenses/bulk`, {
         expenses: combinedExpenses,
         settlements: finalSettlements,
         deleteExpenseIds
@@ -800,7 +800,7 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
 
                 try {
                   const token = localStorage.getItem('token');
-                  await axios.post(`http://localhost:3000/api/groups/${groupId}/guests/convert`, {
+                  await axios.post(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${groupId}/guests/convert`, {
                     guests: guestData
                   }, {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -974,3 +974,4 @@ const ModalOverlay = styled.div`
 `;
 
 export default InteractiveCSVWizard;
+

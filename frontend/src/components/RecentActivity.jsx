@@ -15,7 +15,7 @@ const RecentActivity = () => {
   const fetchActivity = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:3000/api/activity', {
+      const response = await axios.get(import.meta.env.VITE_API_URL + '/api/activity', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setActivities(response.data);
@@ -243,3 +243,4 @@ const Container = styled.div`
 `;
 
 export default RecentActivity;
+

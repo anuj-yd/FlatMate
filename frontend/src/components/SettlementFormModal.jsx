@@ -70,11 +70,11 @@ const SettlementFormModal = ({ isOpen, onClose, groupId, currentMembers, onSucce
     try {
       const token = localStorage.getItem('token');
       if (settlementToEdit) {
-        await axios.put(`http://localhost:3000/api/settlements/${settlementToEdit.id}`, payload, {
+        await axios.put(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/settlements/${settlementToEdit.id}`, payload, {
           headers: { Authorization: `Bearer ${token}` }
         });
       } else {
-        await axios.post(`http://localhost:3000/api/groups/${groupId}/settlements`, payload, {
+        await axios.post(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${groupId}/settlements`, payload, {
           headers: { Authorization: `Bearer ${token}` }
         });
       }
@@ -259,3 +259,4 @@ const ModalContainer = styled.div`
 `;
 
 export default SettlementFormModal;
+

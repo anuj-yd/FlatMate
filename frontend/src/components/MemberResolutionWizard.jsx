@@ -62,7 +62,7 @@ const MemberResolutionWizard = ({ isOpen, onClose, groupId, onNextStep }) => {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.post(`http://localhost:3000/api/groups/${groupId}/imports/init`, formData, {
+      const response = await axios.post(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${groupId}/imports/init`, formData, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
@@ -97,7 +97,7 @@ const MemberResolutionWizard = ({ isOpen, onClose, groupId, onNextStep }) => {
         return { csvMemberName: csvName, ...memberResolutions[csvName] };
       });
       
-      await axios.post(`http://localhost:3000/api/groups/${groupId}/imports/${importSessionId}/member-resolutions`, {
+      await axios.post(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${groupId}/imports/${importSessionId}/member-resolutions`, {
         resolutions: resolutionsArray
       }, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -268,3 +268,4 @@ const ModalOverlay = styled.div`
 `;
 
 export default MemberResolutionWizard;
+

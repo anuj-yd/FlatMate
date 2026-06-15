@@ -16,7 +16,7 @@ const ExpenseDetails = () => {
   const fetchExpense = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.get(`http://localhost:3000/api/expenses/${id}`, {
+      const res = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/expenses/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setExpense(res.data);
@@ -36,7 +36,7 @@ const ExpenseDetails = () => {
   const handleDelete = async () => {
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:3000/api/expenses/${id}`, {
+      await axios.delete(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/expenses/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       alert('Expense deleted.');
@@ -325,3 +325,4 @@ const Container = styled.div`
 `;
 
 export default ExpenseDetails;
+

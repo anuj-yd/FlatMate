@@ -21,7 +21,7 @@ const Auth = () => {
   const handleLogin = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post('http://localhost:3000/api/login', { email, password });
+      const res = await axios.post(import.meta.env.VITE_API_URL + '/api/login', { email, password });
       localStorage.setItem('token', res.data.token);
       navigate('/');
     } catch (err) {
@@ -32,7 +32,7 @@ const Auth = () => {
   const handleSendOtp = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:3000/api/forgot-password', { email });
+      await axios.post(import.meta.env.VITE_API_URL + '/api/forgot-password', { email });
       alert('OTP sent to your email!');
       setOtpSent(true);
     } catch (err) {
@@ -43,7 +43,7 @@ const Auth = () => {
   const handleResetPassword = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:3000/api/reset-password', { email, otp, newPassword });
+      await axios.post(import.meta.env.VITE_API_URL + '/api/reset-password', { email, otp, newPassword });
       alert('Password reset successfully! Please login.');
       setIsForgotPassword(false);
       setOtpSent(false);
@@ -58,7 +58,7 @@ const Auth = () => {
   const handleRegister = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:3000/api/register', { name, email, password });
+      await axios.post(import.meta.env.VITE_API_URL + '/api/register', { name, email, password });
       alert('Registration successful! Please login.');
       // Switch back to login form
       document.getElementById('doodle-flip').checked = false;
@@ -564,3 +564,4 @@ const StyledWrapper = styled.div`
 `;
 
 export default Auth;
+

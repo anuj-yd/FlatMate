@@ -118,11 +118,11 @@ const ExpenseFormModal = ({ isOpen, onClose, groupId, onSuccess, expenseToEdit =
       };
 
       if (expenseToEdit) {
-        await axios.put(`http://localhost:3000/api/expenses/${expenseToEdit.id}`, payload, {
+        await axios.put(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/expenses/${expenseToEdit.id}`, payload, {
           headers: { Authorization: `Bearer ${token}` }
         });
       } else {
-        await axios.post(`http://localhost:3000/api/groups/${groupId}/expenses`, payload, {
+        await axios.post(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${groupId}/expenses`, payload, {
           headers: { Authorization: `Bearer ${token}` }
         });
       }
@@ -443,3 +443,4 @@ const ModalContainer = styled.div`
 `;
 
 export default ExpenseFormModal;
+

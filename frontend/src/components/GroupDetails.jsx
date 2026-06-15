@@ -34,32 +34,32 @@ const GroupDetails = () => {
   const fetchGroupAndMembers = async () => {
     try {
       const token = localStorage.getItem('token');
-      const groupRes = await axios.get(`http://localhost:3000/api/groups/${id}`, {
+      const groupRes = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setGroup(groupRes.data);
       
-      const allGroupsRes = await axios.get(`http://localhost:3000/api/groups`, {
+      const allGroupsRes = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setAllGroups(allGroupsRes.data);
 
-      const membersRes = await axios.get(`http://localhost:3000/api/groups/${id}/members`, {
+      const membersRes = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${id}/members`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMembersData(membersRes.data);
 
-      const expensesRes = await axios.get(`http://localhost:3000/api/groups/${id}/expenses`, {
+      const expensesRes = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${id}/expenses`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setExpenses(expensesRes.data);
 
-      const balancesRes = await axios.get(`http://localhost:3000/api/groups/${id}/balances`, {
+      const balancesRes = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${id}/balances`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setBalances(balancesRes.data.members);
 
-      const settlementsRes = await axios.get(`http://localhost:3000/api/groups/${id}/settlements`, {
+      const settlementsRes = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${id}/settlements`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setSettlements(settlementsRes.data);
@@ -82,7 +82,7 @@ const GroupDetails = () => {
     if (!newMemberEmail.trim()) return;
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`http://localhost:3000/api/groups/${id}/members`, 
+      await axios.post(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${id}/members`, 
         { email: newMemberEmail }, 
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -99,7 +99,7 @@ const GroupDetails = () => {
     if (!removingMember) return;
     try {
       const token = localStorage.getItem('token');
-      await axios.patch(`http://localhost:3000/api/groups/${id}/members/${removingMember.id}/remove`, {}, {
+      await axios.patch(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${id}/members/${removingMember.id}/remove`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRemovingMember(null);
@@ -142,7 +142,7 @@ const GroupDetails = () => {
     if (!window.confirm('Are you sure you want to delete this settlement?')) return;
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:3000/api/settlements/${settlementId}`, {
+      await axios.delete(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/settlements/${settlementId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       fetchGroupAndMembers();
@@ -811,3 +811,4 @@ const Container = styled.div`
 `;
 
 export default GroupDetails;
+

@@ -31,7 +31,7 @@ const Home = () => {
     try {
       const token = localStorage.getItem('token');
       if (!token) return;
-      const response = await axios.get('http://localhost:3000/api/dashboard/stats', {
+      const response = await axios.get(import.meta.env.VITE_API_URL + '/api/dashboard/stats', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setStats(response.data);
@@ -44,7 +44,7 @@ const Home = () => {
     try {
       const token = localStorage.getItem('token');
       if (!token) return;
-      const response = await axios.get('http://localhost:3000/api/me', {
+      const response = await axios.get(import.meta.env.VITE_API_URL + '/api/me', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setUser(response.data.user);
@@ -58,7 +58,7 @@ const Home = () => {
       const token = localStorage.getItem('token');
       if (!token) return navigate('/auth');
       
-      const response = await axios.get('http://localhost:3000/api/groups', {
+      const response = await axios.get(import.meta.env.VITE_API_URL + '/api/groups', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setGroups(response.data);
@@ -83,7 +83,7 @@ const Home = () => {
 
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:3000/api/groups', 
+      await axios.post(import.meta.env.VITE_API_URL + '/api/groups', 
         { name: newGroupName, membersToInvite }, 
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -104,7 +104,7 @@ const Home = () => {
     
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:3000/api/groups/${editingGroup.id}`, { name: editGroupName }, {
+      await axios.put(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${editingGroup.id}`, { name: editGroupName }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setEditingGroup(null);
@@ -120,7 +120,7 @@ const Home = () => {
     if (!deletingGroup) return;
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:3000/api/groups/${deletingGroup.id}`, {
+      await axios.delete(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${deletingGroup.id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setDeletingGroup(null);
@@ -138,7 +138,7 @@ const Home = () => {
     
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`http://localhost:3000/api/groups/${addingMemberToGroup.id}/members`, 
+      await axios.post(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${addingMemberToGroup.id}/members`, 
         { email: newMemberEmail }, 
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -708,3 +708,4 @@ const StyledDashboard = styled.div`
 `;
 
 export default Home;
+

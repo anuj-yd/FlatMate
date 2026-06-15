@@ -24,7 +24,7 @@ const BalanceDetailsModal = ({ isOpen, onClose, groupId, userId, onSettlementAdd
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.get(`http://localhost:3000/api/groups/${groupId}/balances/${userId}`, {
+      const res = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${groupId}/balances/${userId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setDetails(res.data);
@@ -73,7 +73,7 @@ const BalanceDetailsModal = ({ isOpen, onClose, groupId, userId, onSettlementAdd
     setSendingReminder(true);
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`http://localhost:3000/api/groups/${groupId}/reminders/${userId}`, 
+      await axios.post(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${groupId}/reminders/${userId}`, 
         { amount: amountOwedToMe },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -308,3 +308,4 @@ const ModalContainer = styled.div`
 `;
 
 export default BalanceDetailsModal;
+

@@ -29,7 +29,7 @@ const CsvUploadModal = ({ isOpen, onClose, groupId, onUploadSuccess }) => {
 
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`http://localhost:3000/api/groups/${groupId}/expenses/csv`, formData, {
+      await axios.post(`${import.meta.env.VITE_API_URL || "http://localhost:3000"}/api/groups/${groupId}/expenses/csv`, formData, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'
@@ -124,3 +124,4 @@ const ModalContainer = styled.div`
 `;
 
 export default CsvUploadModal;
+
