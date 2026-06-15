@@ -276,6 +276,45 @@ app.post('/api/groups', authenticateToken, async (req, res) => {
     }
 });
 
+// Get User Dashboard Stats
+app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const groups = await prisma.group.findMany({
+            where: { members: { some: { userId } } },
+            include: {
+                members: { include: { user: true } },
+                expenses: { include: { participants: true } },
+                settlements: true
+            }
+        });
+
+        const { calculateGroupBalances } = require('./utils/balanceEngine');
+        
+        let totalExpenses = 0;
+        let pendingSettlements = 0;
+
+        for (const group of groups) {
+            const balances = calculateGroupBalances(group.expenses, group.settlements, group.members);
+            const userBalance = balances.find(b => b.userId === userId);
+            
+            if (userBalance) {
+                totalExpenses += userBalance.totalOwed;
+                pendingSettlements += Math.abs(userBalance.netBalance);
+            }
+        }
+        
+        res.json({ 
+            totalExpenses: Math.round(totalExpenses), 
+            pendingSettlements: Math.round(pendingSettlements) 
+        });
+
+    } catch (err) {
+        console.error('Stats error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 // Get User's Groups API
 app.get('/api/groups', authenticateToken, async (req, res) => {
     try {
@@ -644,12 +683,18 @@ app.post('/api/groups/:groupId/guests/convert', authenticateToken, async (req, r
 app.post('/api/groups/:groupId/expenses/bulk', authenticateToken, async (req, res) => {
     try {
         const groupId = parseInt(req.params.groupId);
-        const { expenses, settlements } = req.body;
+        const { expenses, settlements, deleteExpenseIds } = req.body;
 
         const group = await prisma.group.findUnique({ where: { id: groupId }, include: { members: { include: { user: true } } } });
         if (!group) return res.status(404).json({ error: 'Group not found' });
 
         await prisma.$transaction(async (tx) => {
+            // Delete overwritten DB expenses if any
+            if (deleteExpenseIds && Array.isArray(deleteExpenseIds) && deleteExpenseIds.length > 0) {
+                await tx.expenseParticipant.deleteMany({ where: { expenseId: { in: deleteExpenseIds } } });
+                await tx.expense.deleteMany({ where: { id: { in: deleteExpenseIds } } });
+            }
+
             // Process expenses
             for (const row of expenses) {
                 const amountStr = String(row.Amount || row.amount || '').replace(/[^0-9.-]+/g, "");

@@ -17,13 +17,28 @@ const Home = () => {
   
   const [addingMemberToGroup, setAddingMemberToGroup] = useState(null);
   const [newMemberEmail, setNewMemberEmail] = useState('');
+  const [stats, setStats] = useState({ totalExpenses: 0, pendingSettlements: 0 });
 
   const groupsSectionRef = React.useRef(null);
 
   useEffect(() => {
     fetchUserData();
     fetchGroups();
+    fetchStats();
   }, []);
+
+  const fetchStats = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const response = await axios.get('http://localhost:3000/api/dashboard/stats', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setStats(response.data);
+    } catch (error) {
+      console.error('Failed to fetch stats', error);
+    }
+  };
 
   const fetchUserData = async () => {
     try {
@@ -64,7 +79,6 @@ const Home = () => {
     e.preventDefault();
     if (!newGroupName.trim()) return;
     
-    // Filter out empty emails
     const membersToInvite = newGroupMembers.filter(email => email.trim() !== '');
 
     try {
@@ -77,6 +91,7 @@ const Home = () => {
       setNewGroupMembers(['']);
       setIsCreatingGroup(false);
       fetchGroups();
+      fetchStats();
     } catch (error) {
       console.error('Failed to create group', error);
       alert('Failed to create group');
@@ -110,6 +125,7 @@ const Home = () => {
       });
       setDeletingGroup(null);
       fetchGroups();
+      fetchStats();
     } catch (error) {
       console.error('Failed to delete group', error);
       alert('Failed to delete group. Only the creator can delete.');
@@ -130,14 +146,15 @@ const Home = () => {
       setNewMemberEmail('');
       alert('Member added successfully!');
       fetchGroups();
+      fetchStats();
     } catch (error) {
       console.error('Failed to add member', error);
       alert(error.response?.data?.error || 'Failed to add member. Make sure you are the creator.');
     }
   };
 
-  const totalExpenses = 0;
-  const pendingSettlements = 0;
+  const totalExpenses = stats.totalExpenses;
+  const pendingSettlements = stats.pendingSettlements;
 
   return (
     <StyledDashboard>

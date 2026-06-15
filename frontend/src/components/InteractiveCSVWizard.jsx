@@ -290,13 +290,18 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
     const filteredValidRows = validRowsMutable.filter(r => !rowsToDiscard.has(r.rowId));
     const filteredFinalExpenses = finalExpenses.filter(r => !rowsToDiscard.has(r.rowId));
     const combinedExpenses = [...filteredValidRows, ...filteredFinalExpenses];
+    
+    const deleteExpenseIds = Array.from(rowsToDiscard)
+      .filter(id => typeof id === 'string' && id.startsWith('db_'))
+      .map(id => parseInt(id.replace('db_', '')));
 
     try {
       const token = localStorage.getItem('token');
       
       await axios.post(`http://localhost:3000/api/groups/${groupId}/expenses/bulk`, {
         expenses: combinedExpenses,
-        settlements: finalSettlements
+        settlements: finalSettlements,
+        deleteExpenseIds
       }, {
         headers: { 'Authorization': `Bearer ${token}` }
       });

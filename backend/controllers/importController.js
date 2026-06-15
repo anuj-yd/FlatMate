@@ -157,7 +157,11 @@ const getImportMembers = async (req, res) => {
 
     const group = await prisma.group.findUnique({
       where: { id: parseInt(groupId) },
-      include: { members: { include: { user: true } }, guests: true }
+      include: { 
+        members: { include: { user: true } }, 
+        guests: true,
+        expenses: { include: { payer: true, participants: { include: { user: true } } } }
+      }
     });
 
     res.json({
@@ -241,17 +245,28 @@ const processImportSession = async (req, res) => {
 
     let groupMembers = [];
     let existingGuests = [];
+    let dbExpenses = [];
     if (groupId) {
       const group = await prisma.group.findUnique({ 
         where: { id: parseInt(groupId) }, 
         include: { 
           members: { include: { user: true } },
-          guests: true
+          guests: true,
+          expenses: { include: { payer: true, participants: { include: { user: true } } } }
         } 
       });
       if (group) {
         groupMembers = group.members;
         existingGuests = group.guests || [];
+        dbExpenses = (group.expenses || []).map(e => ({
+          isDbRow: true,
+          rowId: `db_${e.id}`,
+          date: new Date(e.expenseDate).toISOString().split('T')[0],
+          paid_by: e.payer.name,
+          amount: e.amount.toString(),
+          description: e.description,
+          split_with: e.participants.map(p => p.user?.name || '').filter(Boolean).join(';')
+        }));
       }
     }
     
@@ -558,14 +573,45 @@ const processImportSession = async (req, res) => {
       }
 
       // Duplicate Detection (A15 EXACT & A16 CONFLICTING)
-      const dupCandidates = rows.filter(r => r.date === date && r.split_with === splitWith);
+      const dupCandidates = [...dbExpenses, ...rows].filter(r => {
+        let rYear = null, rMonth = null, rDateStr = null;
+        if (r.isDbRow) {
+          const pd = new Date(r.date);
+          rYear = pd.getUTCFullYear(); rMonth = pd.getUTCMonth(); rDateStr = pd.getUTCDate();
+        } else {
+          const pd = new Date(r.date);
+          if (!isNaN(pd)) { rYear = pd.getFullYear(); rMonth = pd.getMonth(); rDateStr = pd.getDate(); }
+        }
+        
+        return rYear !== null && parsedDate && !isNaN(parsedDate) && 
+               rYear === parsedDate.getFullYear() && 
+               rMonth === parsedDate.getMonth() && 
+               rDateStr === parsedDate.getDate();
+      });
+
       let dupCount = 0;
       for (const dup of dupCandidates) {
-        if (dup.paid_by === paidBy && dup.amount === amount) {
-          issues.push({ id: `issue_${rowId}_EXACT_DUPLICATE_${dupCount++}`, rowId, type: 'EXACT_DUPLICATE', tier: 4, message: `Row ${rowId} is an EXACT duplicate of Row ${dup.rowId}`, rowData: row, pairId: dup.rowId, pairRowData: dup });
+        const isExactSplit = dup.split_with === splitWith;
+        const isExactPayerAndAmount = dup.paid_by === paidBy && dup.amount === amount;
+        
+        if (isExactPayerAndAmount && isExactSplit) {
+          issues.push({ 
+            id: `issue_${rowId}_EXACT_DUPLICATE_${dupCount++}`, 
+            rowId, type: 'EXACT_DUPLICATE', tier: 4, 
+            message: `Row ${rowId} is an EXACT duplicate of ${dup.isDbRow ? 'an existing expense' : 'Row ' + dup.rowId}`, 
+            rowData: row, pairId: dup.rowId, pairRowData: dup, isDbConflict: dup.isDbRow 
+          });
           hasTier3or4 = true;
-        } else if (getLevenshteinDistance((dup.description || '').toLowerCase(), desc.toLowerCase()) <= 5) {
-          issues.push({ id: `issue_${rowId}_CONFLICTING_DUPLICATE_${dupCount++}`, rowId, type: 'CONFLICTING_DUPLICATE', tier: 4, message: `Row ${rowId} conflicts with Row ${dup.rowId} (different amount/payer)`, rowData: row, pairId: dup.rowId, pairRowData: dup });
+        } else if (
+          isExactPayerAndAmount || 
+          getLevenshteinDistance((dup.description || '').toLowerCase(), desc.toLowerCase()) <= 5
+        ) {
+          issues.push({ 
+            id: `issue_${rowId}_CONFLICTING_DUPLICATE_${dupCount++}`, 
+            rowId, type: 'CONFLICTING_DUPLICATE', tier: 4, 
+            message: `Row ${rowId} conflicts with ${dup.isDbRow ? 'an existing expense' : 'Row ' + dup.rowId} (different amount/payer/split)`, 
+            rowData: row, pairId: dup.rowId, pairRowData: dup, isDbConflict: dup.isDbRow 
+          });
           hasTier3or4 = true;
         }
       }
