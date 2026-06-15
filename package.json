@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "postinstall": "cd backend && npm install",
+    "postinstall": "cd backend && npm install && chmod +x node_modules/.bin/prisma && npx prisma generate",
     "start": "cd backend && node server.js"
   }
 }
