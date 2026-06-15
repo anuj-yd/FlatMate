@@ -552,6 +552,94 @@ app.post('/api/groups/:groupId/expenses', authenticateToken, async (req, res) =>
     }
 });
 
+// Convert Guests to Members
+app.post('/api/groups/:groupId/guests/convert', authenticateToken, async (req, res) => {
+    try {
+        const groupId = parseInt(req.params.groupId);
+        const { guests } = req.body; // array of { name, email }
+
+        if (!guests || !Array.isArray(guests)) return res.status(400).json({ error: 'Guests array is required' });
+
+        const group = await prisma.group.findUnique({ where: { id: groupId } });
+        if (!group) return res.status(404).json({ error: 'Group not found' });
+
+        await prisma.$transaction(async (tx) => {
+            for (const guest of guests) {
+                const guestName = typeof guest === 'string' ? guest : guest.name;
+                const guestEmail = typeof guest === 'string' ? `converted_${Date.now()}@flatemate.com` : guest.email;
+
+                // Check if user already exists in group
+                const existingMember = await tx.groupMember.findFirst({
+                    where: { groupId, user: { name: guestName } },
+                    include: { user: true }
+                });
+                if (existingMember) continue;
+
+                // Check if user already exists globally by email
+                let userObj = await tx.user.findUnique({
+                    where: { email: guestEmail }
+                });
+
+                if (!userObj) {
+                    try {
+                        // Create user using real email
+                        userObj = await tx.user.create({
+                            data: { name: guestName, email: guestEmail, password: 'placeholder' }
+                        });
+                    } catch (err) {
+                        if (err.code === 'P2002') {
+                            // User was created concurrently or earlier in this transaction
+                            userObj = await tx.user.findUnique({
+                                where: { email: guestEmail }
+                            });
+                        } else {
+                            throw err;
+                        }
+                    }
+                }
+
+                // Add to group
+                await tx.groupMember.create({
+                    data: { groupId, userId: userObj.id }
+                });
+
+                // Optionally delete from guest table
+                await tx.guest.deleteMany({
+                    where: { groupId, name: guestName }
+                });
+
+                // Send Email Invitation
+                try {
+                    const mailOptions = {
+                        from: process.env.EMAIL_USER,
+                        to: guestEmail,
+                        subject: `You have been added to ${group.name} on FlatMate`,
+                        html: `
+                            <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+                                <h2>Welcome to FlatMate!</h2>
+                                <p>Hi ${guestName},</p>
+                                <p>You have been added as a member to the group <strong>${group.name}</strong>.</p>
+                                <p>Your email <strong>${guestEmail}</strong> is now registered. To log in, please visit FlatMate and use the "Forgot Password" feature to set your password and access your group's shared expenses.</p>
+                                <br/>
+                                <p>Best regards,<br/>The FlatMate Team</p>
+                            </div>
+                        `
+                    };
+                    await transporter.sendMail(mailOptions);
+                    console.log(`Invitation email sent to ${guestEmail}`);
+                } catch (emailError) {
+                    console.error(`Failed to send invitation email to ${guestEmail}:`, emailError);
+                }
+            }
+        });
+
+        res.json({ message: 'Guests converted to members successfully' });
+    } catch (error) {
+        console.error('Convert guest error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 // 1.5 Bulk Create Expenses (From CSV Wizard)
 app.post('/api/groups/:groupId/expenses/bulk', authenticateToken, async (req, res) => {
     try {

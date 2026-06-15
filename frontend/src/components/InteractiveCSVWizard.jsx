@@ -18,6 +18,7 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
   const [tier2State, setTier2State] = useState('default'); // 'default', 'editing', 'dismissed'
   const [showAutoFixes, setShowAutoFixes] = useState(false);
   const [showResolved, setShowResolved] = useState(false);
+  const [guestConvertModal, setGuestConvertModal] = useState({ isOpen: false, issueId: null, unknownNames: [] });
 
   // Bulk Mappings
   const [nameMappings, setNameMappings] = useState({});
@@ -116,6 +117,19 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
         });
       }
 
+      // Bulk resolve convert to member
+      if (action === 'CONVERT_GUEST_TO_MEMBER') {
+        const guestNames = customData.map(g => g.name);
+        wizardData.issues.forEach(i => {
+          if (i.id !== issueId && i.type === 'GUEST_IN_SPLIT' && !prev[i.id]) {
+            const isSameGuests = JSON.stringify(i.unknownNames) === JSON.stringify(guestNames);
+            if (isSameGuests) {
+              updates[i.id] = { action: 'CONVERT_GUEST_TO_MEMBER', customData };
+            }
+          }
+        });
+      }
+
       return updates;
     });
   };
@@ -148,11 +162,19 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
     const finalSettlements = [];
     const rowsToDiscard = new Set();
 
+    const guestsToConvert = new Map();
+
     // Apply resolutions
     wizardData.issues.forEach(issue => {
       if (issue.tier < 3) return;
       const resolution = resolvedIssues[issue.id];
       if (!resolution) return;
+
+      if (resolution.action === 'CONVERT_GUEST_TO_MEMBER') {
+         resolution.customData.forEach(g => guestsToConvert.set(g.name, g.email));
+         finalExpenses.push(issue.rowData);
+         return;
+      }
 
       let row = { ...issue.rowData };
 
@@ -271,6 +293,7 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
 
     try {
       const token = localStorage.getItem('token');
+      
       await axios.post(`http://localhost:3000/api/groups/${groupId}/expenses/bulk`, {
         expenses: combinedExpenses,
         settlements: finalSettlements
@@ -287,7 +310,19 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
     }
   };
 
-  const groupMembers = wizardData?.groupMembersList || [];
+  const convertedGuestNames = new Set();
+  Object.values(resolvedIssues).forEach(res => {
+    if (res.action === 'CONVERT_GUEST_TO_MEMBER' && Array.isArray(res.customData)) {
+       res.customData.forEach(name => convertedGuestNames.add(name));
+    }
+  });
+
+  const convertedMembers = Array.from(convertedGuestNames).map((name, idx) => ({
+    id: `converted_${idx}`,
+    name: name
+  }));
+
+  const groupMembers = [...(wizardData?.groupMembersList || []), ...convertedMembers];
 
   const renderIssueCard = (issue) => {
     const isResolved = !!resolvedIssues[issue.id];
@@ -307,6 +342,7 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
         'KEEP_THIS': 'Kept this row only', 'KEEP_PAIR': 'Kept both rows',
         'REMOVE_FROM_SPLIT': `Removed "${resolution.customData}" from split`,
         'ASSIGN_GUEST_SHARE': resolution.customData?.assignedTo ? `Assigned guest's share to ${resolution.customData.assignedTo}` : 'Assigned guest share',
+        'CONVERT_GUEST_TO_MEMBER': 'Converted guest to member & kept in split',
       };
       return (
         <div key={issue.id} className="issue-card resolved">
@@ -420,6 +456,13 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
                 <p style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 'bold', color: '#444' }}>Option 2: Divide guest's share equally among rest</p>
                 <button className="btn-approve" onClick={() => handleResolve(issue.id, 'APPROVE')}>
                   ✂️ Remove Guest & Divide share
+                </button>
+              </div>
+
+              <div style={{ background: '#f8f9fa', padding: '12px', borderRadius: '8px', marginBottom: '10px' }}>
+                <p style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 'bold', color: '#444' }}>Option 3: Convert guest to Member</p>
+                <button className="btn-solid-green" onClick={() => setGuestConvertModal({ isOpen: true, issueId: issue.id, unknownNames: issue.unknownNames })}>
+                  Make Member
                 </button>
               </div>
 
@@ -708,6 +751,72 @@ const InteractiveCSVWizard = ({ isOpen, onClose, groupId, sessionId, onUploadSuc
           </div>
         )}
       </div>
+
+      {/* Guest Convert Modal */}
+      {guestConvertModal.isOpen && (
+        <div className="modal-overlay" style={{ zIndex: 10000, position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <div className="modal-content" style={{ width: '400px', background: '#fff', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ margin: '0 0 10px 0', color: '#333' }}>Add Guest as Member</h3>
+            <p style={{ fontSize: '14px', color: '#666', marginBottom: '20px' }}>
+              Enter email addresses for the guests you want to convert to members. They will receive an invitation email.
+            </p>
+            {guestConvertModal.unknownNames.map((name, i) => (
+              <div key={name} style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>{name}'s Email:</label>
+                <input 
+                  type="email" 
+                  id={`modal-guest-email-${i}`} 
+                  className="auth-input" 
+                  style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '6px' }}
+                  placeholder={`${name}@example.com`} 
+                />
+              </div>
+            ))}
+            <div className="modal-actions" style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button className="btn-secondary" style={{ padding: '8px 16px', border: 'none', background: '#eee', borderRadius: '6px', cursor: 'pointer' }} onClick={() => setGuestConvertModal({ isOpen: false, issueId: null, unknownNames: [] })}>
+                Cancel
+              </button>
+              <button id="add-member-btn" className="btn-primary" style={{ padding: '8px 16px', border: 'none', background: '#00b894', color: 'white', borderRadius: '6px', cursor: 'pointer' }} onClick={async (e) => {
+                const btn = e.currentTarget;
+                if (btn.disabled) return;
+                
+                const guestData = guestConvertModal.unknownNames.map((name, i) => {
+                  const emailInput = document.getElementById(`modal-guest-email-${i}`);
+                  return { name, email: emailInput?.value?.trim() || '' };
+                });
+                if (guestData.some(g => !g.email)) {
+                  alert("Please enter an email address for all guests to invite them.");
+                  return;
+                }
+
+                btn.disabled = true;
+                const originalText = btn.innerText;
+                btn.innerText = 'Inviting...';
+
+                try {
+                  const token = localStorage.getItem('token');
+                  await axios.post(`http://localhost:3000/api/groups/${groupId}/guests/convert`, {
+                    guests: guestData
+                  }, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                  });
+                  
+                  handleResolve(guestConvertModal.issueId, 'CONVERT_GUEST_TO_MEMBER', guestData);
+                  setGuestConvertModal({ isOpen: false, issueId: null, unknownNames: [] });
+                } catch (err) {
+                  console.error('Failed to convert guest:', err);
+                  alert('Failed to invite guest: ' + (err.response?.data?.error || err.message));
+                  btn.disabled = false;
+                  btn.innerText = originalText;
+                }
+              }}>
+                Add Member
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </ModalOverlay>
   );
 };
